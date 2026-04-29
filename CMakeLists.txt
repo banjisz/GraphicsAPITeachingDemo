@@ -11,19 +11,24 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(APP_NAME GraphicsAPITeachingDemo)
+set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set(DIRECTX_SRC_DIR ${SRC_DIR}/directx)
+set(METAL_SRC_DIR ${SRC_DIR}/metal)
+set(OPENGL_SRC_DIR ${SRC_DIR}/opengl)
+set(SHARED_SRC_DIR ${SRC_DIR}/shared)
 
 if(APPLE)
     set(SOURCES
-        src/main.mm
-        src/AppDelegate.mm
-        src/Renderer.mm
-        src/OpenGLRenderer.mm
+        ${METAL_SRC_DIR}/main.mm
+        ${METAL_SRC_DIR}/AppDelegate.mm
+        ${METAL_SRC_DIR}/Renderer.mm
+        ${OPENGL_SRC_DIR}/OpenGLRenderer.mm
     )
 
     set(HEADERS
-        src/AppDelegate.h
-        src/Renderer.h
-        src/OpenGLRenderer.h
+        ${METAL_SRC_DIR}/AppDelegate.h
+        ${METAL_SRC_DIR}/Renderer.h
+        ${OPENGL_SRC_DIR}/OpenGLRenderer.h
     )
 
     set(METAL_SHADER
@@ -42,6 +47,11 @@ if(APPLE)
 
     target_compile_definitions(${APP_NAME} PRIVATE
         GL_SILENCE_DEPRECATION=1
+    )
+
+    target_include_directories(${APP_NAME} PRIVATE
+        ${METAL_SRC_DIR}
+        ${OPENGL_SRC_DIR}
     )
 
     find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
@@ -72,9 +82,14 @@ if(APPLE)
     )
 elseif(WIN32)
     add_executable(${APP_NAME} WIN32
-        src/DXTeachingMain.cpp
-        src/DX11Renderer.cpp
-        src/DX12Renderer.cpp
+        ${DIRECTX_SRC_DIR}/DXTeachingMain.cpp
+        ${DIRECTX_SRC_DIR}/DX11Renderer.cpp
+        ${DIRECTX_SRC_DIR}/DX12Renderer.cpp
+    )
+
+    target_include_directories(${APP_NAME} PRIVATE
+        ${DIRECTX_SRC_DIR}
+        ${SHARED_SRC_DIR}
     )
 
     target_link_libraries(${APP_NAME} PRIVATE
@@ -87,11 +102,15 @@ elseif(WIN32)
     )
 else()
     add_executable(${APP_NAME}
-        src/OpenGLCrossPlatformMain.cpp
+        ${OPENGL_SRC_DIR}/OpenGLCrossPlatformMain.cpp
     )
 
     find_package(OpenGL REQUIRED)
     find_package(glfw3 REQUIRED)
+
+    target_include_directories(${APP_NAME} PRIVATE
+        ${OPENGL_SRC_DIR}
+    )
 
     target_link_libraries(${APP_NAME} PRIVATE
         OpenGL::GL
