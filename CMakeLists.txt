@@ -70,6 +70,21 @@ if(APPLE)
         MACOSX_DEPLOYMENT_TARGET "14.0"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.example.graphicsapiteachingdemo"
     )
+elseif(WIN32)
+    add_executable(${APP_NAME} WIN32
+        src/DXTeachingMain.cpp
+        src/DX11Renderer.cpp
+        src/DX12Renderer.cpp
+    )
+
+    target_link_libraries(${APP_NAME} PRIVATE
+        d3d11
+        d3d12
+        dxgi
+        d3dcompiler
+        user32
+        gdi32
+    )
 else()
     add_executable(${APP_NAME}
         src/OpenGLCrossPlatformMain.cpp

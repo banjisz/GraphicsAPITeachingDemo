@@ -105,12 +105,25 @@ macOS 运行时切换方式：
 
 ### 非 macOS 构建说明
 
-在 `APPLE=OFF` 场景下，CMake 会构建 `src/OpenGLCrossPlatformMain.cpp`（GLFW + OpenGL）。
+Windows（`WIN32`）下，CMake 会构建 DirectX 教学版入口：
+
+- `src/DXTeachingMain.cpp`
+- `src/DX11Renderer.cpp`
+- `src/DX12Renderer.cpp`
+
+功能：
+
+- 使用 DX11 / DX12 重新实现 1-15 教学主题（统一主题映射）。
+- UI 菜单支持运行时切换渲染后端：`Renderer -> DX11 / DX12`。
+- UI 菜单支持选择 1-15 主题：`Demo -> 1..15`。
+- 快捷键：`Q` 切到 DX11，`W` 切到 DX12，`1..9` 切主题 1..9，`F1..F6` 切主题 10..15，`E` 切错误示例。
+
+Linux/其他非 Windows 平台下，仍构建 `src/OpenGLCrossPlatformMain.cpp`（GLFW + OpenGL）。
 
 依赖：
 
-- OpenGL
-- glfw3
+- Windows: D3D11, D3D12, DXGI, D3DCompiler
+- Linux/其他: OpenGL, glfw3
 
 示例：
 
