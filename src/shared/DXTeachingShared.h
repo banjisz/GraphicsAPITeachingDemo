@@ -9,7 +9,7 @@
 namespace dxteaching
 {
 
-static constexpr uint32_t kTopicCount = 15;
+static constexpr uint32_t kTopicCount = 20;
 static constexpr uint32_t kSwapChainBufferCount = 2;
 static constexpr uint32_t kShadowMapSize = 1024;
 static constexpr uint32_t kSceneSampleCount = 4;
@@ -120,7 +120,12 @@ inline std::string_view TopicTitle(int topic)
         "Synchronization And Scheduling",
         "Ray Tracing Fallback",
         "MetalFX Style Upscaling",
-        "Profiling And Debug Markers"};
+        "Profiling And Debug Markers",
+        "Tiled Lighting Visualization",
+        "SSAO Approximation",
+        "Screen Space Reflections",
+        "Variable Rate Shading View",
+        "GPU Driven LOD And Culling"};
     return kTitles[static_cast<size_t>(ClampTopic(topic) - 1)];
 }
 
@@ -231,6 +236,62 @@ inline TopicRuntimeProfile BuildTopicRuntimeProfile(int topic, bool errorExample
             profile.objectCount = 5;
             profile.particleStrength = 0.4f;
             profile.temporalBlend = 0.25f;
+            break;
+        case 16:
+            profile.useShadow = true;
+            profile.usePBR = true;
+            profile.enableBloom = true;
+            profile.enableParticles = false;
+            profile.objectCount = 6;
+            profile.blurPassCount = 4;
+            profile.bloomStrength = 0.52f;
+            profile.edgeStrength = 0.30f;
+            profile.rotationSpeed = 1.05f;
+            break;
+        case 17:
+            profile.useShadow = true;
+            profile.usePBR = false;
+            profile.enableBloom = false;
+            profile.enableParticles = false;
+            profile.objectCount = 4;
+            profile.shadowStrength = 0.82f;
+            profile.edgeStrength = 0.42f;
+            profile.rotationSpeed = 0.70f;
+            break;
+        case 18:
+            profile.useShadow = true;
+            profile.usePBR = true;
+            profile.enableBloom = true;
+            profile.enableTemporal = true;
+            profile.enableParticles = false;
+            profile.objectCount = 3;
+            profile.exposure = 1.18f;
+            profile.bloomStrength = 0.70f;
+            profile.temporalBlend = 0.18f;
+            profile.blurPassCount = 5;
+            profile.rotationSpeed = 0.82f;
+            break;
+        case 19:
+            profile.useShadow = false;
+            profile.usePBR = false;
+            profile.enableBloom = false;
+            profile.enableParticles = false;
+            profile.objectCount = 5;
+            profile.edgeStrength = 0.55f;
+            profile.rotationSpeed = 0.55f;
+            break;
+        case 20:
+            profile.useShadow = true;
+            profile.usePBR = true;
+            profile.enableBloom = true;
+            profile.enableParticles = true;
+            profile.enableTemporal = true;
+            profile.objectCount = 9;
+            profile.bloomStrength = 0.38f;
+            profile.particleStrength = 0.30f;
+            profile.temporalBlend = 0.20f;
+            profile.edgeStrength = 0.34f;
+            profile.rotationSpeed = 0.95f;
             break;
         default:
             break;
@@ -505,6 +566,71 @@ float3 TopicColorAdjust(int topic, float3 color, float3 normal, float3 worldPos)
         float heat = smoothstep(0.2, 1.0, abs(sin(t * 2.0 + worldPos.x * 3.0 + worldPos.z * 2.0)));
         color = lerp(color, float3(heat, 0.18, 1.0 - heat), 0.42);
     }
+    else if (topic == 16)
+    {
+        float2 tile = floor((worldPos.xz + 4.0) * 1.25);
+        float tileId = Hash12(tile);
+        float3 tileColor = 0.45 + 0.55 * float3(
+            Hash12(tile + 1.7),
+            Hash12(tile + 8.3),
+            Hash12(tile + 15.1));
+        float movingLight = 0.0;
+        [unroll]
+        for (int i = 0; i < 4; ++i)
+        {
+            float fi = (float)i;
+            float3 lp = float3(sin(t * (0.55 + fi * 0.18) + fi * 1.9) * 3.2,
+                               1.15 + 0.35 * sin(t * 0.7 + fi),
+                               cos(t * (0.42 + fi * 0.13) + fi * 2.4) * 2.7);
+            float d = length(worldPos - lp);
+            movingLight += saturate(1.0 - d / (2.4 + fi * 0.2));
+        }
+        float grid = max(step(0.94, frac((worldPos.x + 4.0) * 1.25)),
+                         step(0.94, frac((worldPos.z + 4.0) * 1.25)));
+        color = color * (0.55 + movingLight * 0.55) + tileColor * (0.12 + grid * 0.28 + tileId * 0.05);
+    }
+    else if (topic == 17)
+    {
+        float3 N = normalize(normal);
+        float horizon = saturate(N.y * 0.5 + 0.5);
+        float cavity = 1.0 - smoothstep(0.18, 0.85, abs(N.x) + abs(N.y) + abs(N.z) - 1.0);
+        float contact = smoothstep(-0.95, 0.20, -worldPos.y);
+        float ao = saturate(0.52 + horizon * 0.34 - cavity * 0.18 - contact * 0.20);
+        color *= ao;
+        color = lerp(color, color * float3(0.70, 0.82, 1.0), 0.18);
+    }
+    else if (topic == 18)
+    {
+        float3 N = normalize(normal);
+        float3 V = normalize(gCameraPosAndTime.xyz - worldPos);
+        float fresnel = pow(saturate(1.0 - dot(N, V)), 4.0);
+        float2 reflectedUv = reflect(-V, N).xz * 0.22 + worldPos.xz * 0.04 + t * float2(0.03, -0.02);
+        float bands = 0.5 + 0.5 * sin((reflectedUv.x + reflectedUv.y) * 38.0);
+        float3 reflection = lerp(float3(0.08, 0.18, 0.28), float3(0.55, 0.80, 1.0), bands);
+        color = lerp(color, reflection + color * 0.55, fresnel * 0.72);
+        color += fresnel * float3(0.35, 0.55, 0.85);
+    }
+    else if (topic == 19)
+    {
+        float2 screenUv = worldPos.xy * 0.18 + 0.5;
+        float2 coarse = floor(screenUv * 12.0) / 12.0;
+        float lane = Hash12(coarse);
+        float shadeRate = lerp(0.55, 1.15, step(0.36, lane));
+        float debugGrid = max(step(0.92, frac(screenUv.x * 12.0)), step(0.92, frac(screenUv.y * 12.0)));
+        float3 rateColor = lane < 0.36 ? float3(0.25, 0.55, 1.0) : float3(1.0, 0.62, 0.25);
+        color = color * shadeRate;
+        color = lerp(color, rateColor, 0.22 + debugGrid * 0.30);
+    }
+    else if (topic == 20)
+    {
+        float distanceToCamera = length(gCameraPosAndTime.xyz - worldPos);
+        float lod = saturate((distanceToCamera - 3.0) / 5.0);
+        float quant = floor(lod * 4.0) / 4.0;
+        float stripes = step(0.82, frac((worldPos.x + worldPos.y + worldPos.z) * lerp(8.0, 2.5, quant)));
+        float3 lodColor = lerp(float3(0.30, 1.00, 0.55), float3(1.00, 0.45, 0.20), quant);
+        color = lerp(color, color * lodColor, 0.22);
+        color += stripes * lodColor * (0.10 + quant * 0.18);
+    }
 
     return max(color, 0.0);
 }
@@ -617,6 +743,14 @@ float4 BrightExtractPS(FullscreenVSOutput input) : SV_TARGET
     {
         threshold *= 0.85;
     }
+    else if (topic == 18)
+    {
+        threshold *= 0.78;
+    }
+    else if (topic == 20)
+    {
+        threshold *= 0.90;
+    }
     float luminance = dot(scene, float3(0.2126, 0.7152, 0.0722));
     float knee = saturate((luminance - threshold) / max(0.0001, (1.0 - threshold)));
     return float4(scene * knee, 1.0);
@@ -682,6 +816,37 @@ float4 CompositePS(FullscreenVSOutput input) : SV_TARGET
         float heat = saturate(dot(hdr, float3(0.2, 0.7, 0.1)));
         float3 heatColor = lerp(float3(0.2, 0.8, 1.0), float3(1.0, 0.2, 0.1), heat);
         mapped = lerp(mapped, heatColor, 0.20);
+    }
+    else if (topic == 16)
+    {
+        float2 tile = floor(input.uv * float2(18.0, 10.0));
+        float grid = max(step(0.965, frac(input.uv.x * 18.0)), step(0.945, frac(input.uv.y * 10.0)));
+        float3 tileTint = 0.18 * float3(Hash12(tile + 2.0), Hash12(tile + 7.0), Hash12(tile + 13.0));
+        mapped = saturate(mapped + tileTint + grid * float3(0.15, 0.28, 0.42));
+    }
+    else if (topic == 17)
+    {
+        float2 centered = input.uv * 2.0 - 1.0;
+        float ao = 1.0 - smoothstep(0.20, 1.05, dot(centered, centered)) * 0.25;
+        mapped *= ao;
+    }
+    else if (topic == 18)
+    {
+        float sweep = 0.5 + 0.5 * sin((input.uv.x + input.uv.y) * 28.0 + gPostParams1.y * 2.0);
+        mapped += sweep * 0.05 * float3(0.35, 0.65, 1.0);
+    }
+    else if (topic == 19)
+    {
+        float2 coarseUv = floor(input.uv * float2(20.0, 12.0)) / float2(20.0, 12.0);
+        float rate = Hash12(coarseUv * 31.0);
+        float3 rateTint = rate < 0.42 ? float3(0.15, 0.35, 0.95) : float3(0.95, 0.45, 0.10);
+        float grid = max(step(0.96, frac(input.uv.x * 20.0)), step(0.94, frac(input.uv.y * 12.0)));
+        mapped = lerp(mapped, rateTint, 0.16 + grid * 0.35);
+    }
+    else if (topic == 20)
+    {
+        float scan = step(0.92, frac(input.uv.y * 24.0 + gPostParams1.y * 0.7));
+        mapped = saturate(mapped + scan * float3(0.08, 0.20, 0.12));
     }
 
     return float4(saturate(mapped), 1.0);

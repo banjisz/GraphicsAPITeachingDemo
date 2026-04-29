@@ -287,7 +287,7 @@ void DX11Renderer::Render(const FrameSettings &settings)
     postCB.postParams0[2] = profile.enableParticles ? profile.particleStrength : 0.0f;
     postCB.postParams0[3] = (profile.enableTemporal && historyValid_) ? profile.temporalBlend : 0.0f;
     postCB.postParams1[0] = static_cast<float>(clampedTopic);
-    postCB.postParams1[1] = settings.errorExampleEnabled ? 1.0f : 0.0f;
+    postCB.postParams1[1] = settings.elapsedSeconds;
     postCB.postParams1[2] = profile.edgeStrength;
     postCB.postParams1[3] = profile.brightThreshold;
     UpdateDynamicBuffer(context_.Get(), postCB_.Get(), postCB);

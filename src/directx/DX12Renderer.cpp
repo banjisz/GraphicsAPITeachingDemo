@@ -328,7 +328,7 @@ void DX12Renderer::Render(const FrameSettings &settings)
     postCB.postParams0[2] = profile.enableParticles ? profile.particleStrength : 0.0f;
     postCB.postParams0[3] = temporalBlend;
     postCB.postParams1[0] = static_cast<float>(clampedTopic);
-    postCB.postParams1[1] = settings.errorExampleEnabled ? 1.0f : 0.0f;
+    postCB.postParams1[1] = settings.elapsedSeconds;
     postCB.postParams1[2] = profile.edgeStrength;
     postCB.postParams1[3] = profile.brightThreshold;
     std::memcpy(mappedPostCB_ + static_cast<size_t>(frameIndex_) * static_cast<size_t>(postCBStride_), &postCB, sizeof(postCB));

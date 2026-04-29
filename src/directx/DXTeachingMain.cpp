@@ -237,6 +237,21 @@ public:
                     case VK_F6:
                         SetTopic(15);
                         return 0;
+                    case VK_F7:
+                        SetTopic(16);
+                        return 0;
+                    case VK_F8:
+                        SetTopic(17);
+                        return 0;
+                    case VK_F9:
+                        SetTopic(18);
+                        return 0;
+                    case VK_F10:
+                        SetTopic(19);
+                        return 0;
+                    case VK_F11:
+                        SetTopic(20);
+                        return 0;
                     case 'Q':
                         SwitchBackend(BackendType::DX11);
                         return 0;
@@ -482,7 +497,7 @@ private:
             title << " | Error Example ON";
         }
 
-        title << " | Keys: 1-9, F1-F6(10-15), Q=DX11, W=DX12, E=Error";
+        title << " | Keys: 1-9, F1-F11(10-20), Q=DX11, W=DX12, E=Error";
         SetWindowTextA(hwnd_, title.str().c_str());
     }
 
