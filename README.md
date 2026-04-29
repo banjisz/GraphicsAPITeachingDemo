@@ -401,7 +401,7 @@ cmake --build build
 ```bash
 cmake -S . -B build -G Xcode
 cmake --build build --config Debug
-open build/Debug/MetalCMakeDemo.app
+open build/Debug/GraphicsAPITeachingDemo.app
 ```
 
 ## 性能建议

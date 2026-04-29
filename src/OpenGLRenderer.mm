@@ -339,6 +339,34 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
     return 0;
 }
 
+static void ConfigureTexture2DNoMip(GLuint texture, GLint minFilter, GLint magFilter)
+{
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+}
+
+static GLuint CreateSolidColorTexture2D(GLubyte r, GLubyte g, GLubyte b, GLubyte a)
+{
+    GLuint texture = 0;
+    const GLubyte pixel[4] = {r, g, b, a};
+    glGenTextures(1, &texture);
+    if (texture == 0)
+    {
+        return 0;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    ConfigureTexture2DNoMip(texture, GL_NEAREST, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return texture;
+}
+
 @interface OpenGLRenderer ()
 {
     __weak NSOpenGLView *_view;
@@ -428,6 +456,9 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
     GLint _legendResolutionUniform;
     GLint _legendTimeUniform;
 
+    GLuint _fallbackBlackTex;
+    GLuint _fallbackWhiteTex;
+
     BOOL _ready;
     CFAbsoluteTime _startTime;
     CFAbsoluteTime _lastFrameTime;
@@ -514,6 +545,21 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
     }
 
     [_view.openGLContext makeCurrentContext];
+
+    _fallbackBlackTex = CreateSolidColorTexture2D(0, 0, 0, 255);
+    _fallbackWhiteTex = CreateSolidColorTexture2D(255, 255, 255, 255);
+    if (_fallbackBlackTex == 0 || _fallbackWhiteTex == 0)
+    {
+        NSLog(@"Failed to create OpenGL fallback textures.");
+        return self;
+    }
+
+    for (int unit = 0; unit < 4; ++unit)
+    {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(GL_TEXTURE_2D, _fallbackBlackTex);
+    }
+    glActiveTexture(GL_TEXTURE0);
 
     static const char *kVertexSource =
         "#version 150 core\n"
@@ -1372,6 +1418,17 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
         _legendProgram = 0;
     }
 
+    if (_fallbackBlackTex != 0)
+    {
+        glDeleteTextures(1, &_fallbackBlackTex);
+        _fallbackBlackTex = 0;
+    }
+    if (_fallbackWhiteTex != 0)
+    {
+        glDeleteTextures(1, &_fallbackWhiteTex);
+        _fallbackWhiteTex = 0;
+    }
+
     if (_quadVBO != 0)
     {
         glDeleteBuffers(1, &_quadVBO);
@@ -1439,10 +1496,7 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
     glGenTextures(1, &_sceneColorTex);
     glBindTexture(GL_TEXTURE_2D, _sceneColorTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    ConfigureTexture2DNoMip(_sceneColorTex, GL_LINEAR, GL_LINEAR);
 
     glGenRenderbuffers(1, &_sceneDepthRBO);
     glBindRenderbuffer(GL_RENDERBUFFER, _sceneDepthRBO);
@@ -1465,10 +1519,7 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
     {
         glBindTexture(GL_TEXTURE_2D, _bloomTex[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        ConfigureTexture2DNoMip(_bloomTex[i], GL_LINEAR, GL_LINEAR);
 
         glBindFramebuffer(GL_FRAMEBUFFER, _bloomFBO[i]);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _bloomTex[i], 0);
@@ -1483,10 +1534,7 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
     glGenTextures(1, &_historyTex);
     glBindTexture(GL_TEXTURE_2D, _historyTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    ConfigureTexture2DNoMip(_historyTex, GL_LINEAR, GL_LINEAR);
 
     GLuint clearFBO = 0;
     glGenFramebuffers(1, &clearFBO);
@@ -1532,10 +1580,8 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
                  GL_DEPTH_COMPONENT,
                  GL_FLOAT,
                  NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    ConfigureTexture2DNoMip(_shadowDepthTex, GL_NEAREST, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
 
     glGenFramebuffers(1, &_shadowFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, _shadowFBO);
@@ -1710,7 +1756,8 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
     if (_cubeShadowMapUniform >= 0)
     {
         glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, _shadowDepthTex);
+        GLuint shadowTex = (_shadowDepthTex != 0) ? _shadowDepthTex : _fallbackWhiteTex;
+        glBindTexture(GL_TEXTURE_2D, shadowTex);
         glUniform1i(_cubeShadowMapUniform, 3);
         glActiveTexture(GL_TEXTURE0);
     }
@@ -2302,7 +2349,8 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
         if (_postExtractSceneUniform >= 0)
         {
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, _sceneColorTex);
+            GLuint sceneTex = (_sceneColorTex != 0) ? _sceneColorTex : _fallbackBlackTex;
+            glBindTexture(GL_TEXTURE_2D, sceneTex);
             glUniform1i(_postExtractSceneUniform, 0);
         }
         if (_postExtractThresholdAUniform >= 0)
@@ -2336,7 +2384,8 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
             if (_postBlurSourceUniform >= 0)
             {
                 glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, _bloomTex[src]);
+                GLuint blurSource = (_bloomTex[src] != 0) ? _bloomTex[src] : _fallbackBlackTex;
+                glBindTexture(GL_TEXTURE_2D, blurSource);
                 glUniform1i(_postBlurSourceUniform, 0);
             }
             if (_postBlurDirectionUniform >= 0)
@@ -2361,19 +2410,22 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
         if (_postCompositeSceneUniform >= 0)
         {
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, _sceneColorTex);
+            GLuint sceneTex = (_sceneColorTex != 0) ? _sceneColorTex : _fallbackBlackTex;
+            glBindTexture(GL_TEXTURE_2D, sceneTex);
             glUniform1i(_postCompositeSceneUniform, 0);
         }
         if (_postCompositeBloomUniform >= 0)
         {
             glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, _bloomTex[src]);
+            GLuint bloomTex = (_bloomTex[src] != 0) ? _bloomTex[src] : _fallbackBlackTex;
+            glBindTexture(GL_TEXTURE_2D, bloomTex);
             glUniform1i(_postCompositeBloomUniform, 1);
         }
         if (_postCompositeHistoryUniform >= 0)
         {
             glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_2D, _historyTex);
+            GLuint historyTex = (_historyTex != 0) ? _historyTex : _fallbackBlackTex;
+            glBindTexture(GL_TEXTURE_2D, historyTex);
             glUniform1i(_postCompositeHistoryUniform, 2);
         }
         if (_postCompositeBloomStrengthUniform >= 0)
@@ -2390,9 +2442,12 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
         }
         [self drawFullscreenQuad];
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, _historyTex);
-        glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+        if (_historyTex != 0)
+        {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, _historyTex);
+            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+        }
     }
     else
     {
@@ -2423,7 +2478,7 @@ static GLuint BuildProgram(const char *vertexSource, const char *fragmentSource)
 
     glUseProgram(0);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D, _fallbackBlackTex);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     (void)cfg;
 }

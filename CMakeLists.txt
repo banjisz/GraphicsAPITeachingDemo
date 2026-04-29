@@ -1,16 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 
 if(APPLE)
-    project(MetalCMakeDemo LANGUAGES C CXX OBJC OBJCXX)
+    project(GraphicsAPITeachingDemo LANGUAGES C CXX OBJC OBJCXX)
 else()
-    project(MetalCMakeDemo LANGUAGES C CXX)
+    project(GraphicsAPITeachingDemo LANGUAGES C CXX)
 endif()
 
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(APP_NAME MetalCMakeDemo)
+set(APP_NAME GraphicsAPITeachingDemo)
 
 if(APPLE)
     set(SOURCES
@@ -66,9 +66,9 @@ if(APPLE)
 
     set_target_properties(${APP_NAME} PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.example.metalcmakedemo"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.example.graphicsapiteachingdemo"
         MACOSX_DEPLOYMENT_TARGET "14.0"
-        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.example.metalcmakedemo"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.example.graphicsapiteachingdemo"
     )
 else()
     add_executable(${APP_NAME}

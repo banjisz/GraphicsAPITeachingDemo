@@ -2,8 +2,8 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-APP_NAME="MetalCMakeDemo"
-BUNDLE_ID="com.example.metalcmakedemo"
+APP_NAME="GraphicsAPITeachingDemo"
+BUNDLE_ID="com.example.graphicsapiteachingdemo"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
