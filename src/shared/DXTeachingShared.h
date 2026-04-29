@@ -344,6 +344,8 @@ struct SceneVSOutput
     float3 normal : TEXCOORD1;
     float3 color : COLOR;
     float4 lightPos : TEXCOORD2;
+    float3 localPos : TEXCOORD3;
+    float3 localNormal : TEXCOORD4;
 };
 
 struct FullscreenVSOutput
@@ -357,26 +359,26 @@ float Hash12(float2 p)
     return frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123);
 }
 
-float2 MaterialUV(float3 worldPos, float3 normal)
+float2 MaterialUV(float3 localPos, float3 localNormal)
 {
-    float3 an = abs(normal);
-    float2 uv = (an.z > an.x && an.z > an.y) ? worldPos.xy : ((an.x > an.y) ? worldPos.zy : worldPos.xz);
+    float3 an = abs(localNormal);
+    float2 uv = (an.z > an.x && an.z > an.y) ? localPos.xy : ((an.x > an.y) ? localPos.zy : localPos.xz);
     return frac(uv * 0.78 + 0.5);
 }
 
-float3 SampleMaterialAlbedo(float3 worldPos, float3 normal, float3 vertexColor)
+float3 SampleMaterialAlbedo(float3 localPos, float3 localNormal, float3 vertexColor)
 {
-    float2 uv = MaterialUV(worldPos, normal);
+    float2 uv = MaterialUV(localPos, localNormal);
     float3 tex = gAlbedoTex.Sample(gLinearClamp, uv).rgb;
     float3 tint = lerp(float3(1.0, 1.0, 1.0), saturate(vertexColor * 1.05), 0.35);
     return max(tex * tint * 1.05, 0.0);
 }
 
-float3 ApplyMaterialNormal(float3 worldPos, float3 normal)
+float3 ApplyMaterialNormal(float3 localPos, float3 localNormal, float3 worldNormal)
 {
-    float2 uv = MaterialUV(worldPos, normal);
+    float2 uv = MaterialUV(localPos, localNormal);
     float3 map = gNormalTex.Sample(gLinearClamp, uv).xyz * 2.0 - 1.0;
-    float3 N = normalize(normal);
+    float3 N = normalize(worldNormal);
     float3 helper = abs(N.y) < 0.9 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
     float3 T = normalize(cross(helper, N));
     float3 B = cross(N, T);
@@ -529,6 +531,8 @@ SceneVSOutput SceneVS(SceneVSInput input)
     output.normal = normalize(mul(float4(input.normal, 0.0), gWorld).xyz);
     output.color = input.color;
     output.lightPos = mul(worldPos, gLightViewProj);
+    output.localPos = input.position;
+    output.localNormal = input.normal;
     return output;
 }
 
@@ -545,14 +549,14 @@ float4 ScenePS(SceneVSOutput input) : SV_TARGET
     bool usePBR = gTopicAndFlags.z > 0.5;
     bool useShadow = gTopicAndFlags.w > 0.5;
 
-    float3 normal = ApplyMaterialNormal(input.worldPos, normalize(input.normal));
+    float3 normal = ApplyMaterialNormal(input.localPos, normalize(input.localNormal), normalize(input.normal));
     float3 lightDir = normalize(-gLightDirAndStrength.xyz);
     float3 viewDir = normalize(gCameraPosAndTime.xyz - input.worldPos);
     float ndl = saturate(dot(normal, lightDir));
 
-    float2 materialUv = MaterialUV(input.worldPos, input.normal);
+    float2 materialUv = MaterialUV(input.localPos, input.localNormal);
     float materialPattern = gAlbedoTex.Sample(gLinearClamp, materialUv).a;
-    float3 baseColor = SampleMaterialAlbedo(input.worldPos, input.normal, input.color);
+    float3 baseColor = SampleMaterialAlbedo(input.localPos, input.localNormal, input.color);
     float3 litColor = baseColor * (0.18 + 0.82 * ndl);
 
     if (usePBR)

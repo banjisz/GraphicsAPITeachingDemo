@@ -81,10 +81,28 @@ if(APPLE)
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.example.graphicsapiteachingdemo"
     )
 elseif(WIN32)
-    add_executable(${APP_NAME} WIN32
+    set(DIRECTX_SOURCES
         ${DIRECTX_SRC_DIR}/DXTeachingMain.cpp
         ${DIRECTX_SRC_DIR}/DX11Renderer.cpp
         ${DIRECTX_SRC_DIR}/DX12Renderer.cpp
+    )
+
+    set(DIRECTX_HEADERS
+        ${DIRECTX_SRC_DIR}/DX11Renderer.h
+        ${DIRECTX_SRC_DIR}/DX12Renderer.h
+        ${SHARED_SRC_DIR}/DiagnosticsLog.h
+        ${SHARED_SRC_DIR}/DXTeachingShared.h
+        ${SHARED_SRC_DIR}/IRendererBackend.h
+    )
+
+    add_executable(${APP_NAME} WIN32
+        ${DIRECTX_SOURCES}
+        ${DIRECTX_HEADERS}
+    )
+
+    source_group(TREE ${SRC_DIR} FILES
+        ${DIRECTX_SOURCES}
+        ${DIRECTX_HEADERS}
     )
 
     target_include_directories(${APP_NAME} PRIVATE
