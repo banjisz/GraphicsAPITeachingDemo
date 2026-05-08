@@ -14,7 +14,8 @@ enum class BackendType
 {
     DX11,
     DX12,
-    OpenGL
+    OpenGL,
+    Vulkan
 };
 
 class IRendererBackend

@@ -13,6 +13,7 @@
 #include "DX12Renderer.h"
 #include "IRendererBackend.h"
 #include "OpenGLRendererWin.h"
+#include "VulkanRenderer.h"
 
 namespace dxteaching
 {
@@ -28,12 +29,20 @@ constexpr UINT kMenuToggleError = 2001;
 constexpr UINT kMenuBackendDX11 = 2101;
 constexpr UINT kMenuBackendDX12 = 2102;
 constexpr UINT kMenuBackendOpenGL = 2103;
+constexpr UINT kMenuVulkanTriangle = 2104;
+constexpr UINT kMenuVulkanCube = 2105;
 constexpr UINT kMenuExit = 2199;
 constexpr UINT_PTR kRenderTimerId = 1;
 constexpr UINT kRenderTimerIntervalMs = 16;
 
 class DemoApplication
 {
+    enum class VulkanViewMode
+    {
+        Triangle,
+        Cube
+    };
+
 public:
     bool Initialize(HINSTANCE instance, int showCommand)
     {
@@ -43,7 +52,7 @@ public:
 
         WNDCLASSEXA windowClass{};
         windowClass.cbSize = sizeof(windowClass);
-        windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+        windowClass.style = CS_HREDRAW | CS_VREDRAW;
         windowClass.lpfnWndProc = &DemoApplication::WndProc;
         windowClass.hInstance = instance_;
         windowClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
@@ -198,6 +207,12 @@ public:
                     case kMenuBackendOpenGL:
                         SwitchBackend(BackendType::OpenGL);
                         return 0;
+                    case kMenuVulkanTriangle:
+                        SetVulkanViewMode(VulkanViewMode::Triangle);
+                        return 0;
+                    case kMenuVulkanCube:
+                        SetVulkanViewMode(VulkanViewMode::Cube);
+                        return 0;
                     case kMenuExit:
                         DestroyWindow(hwnd_);
                         return 0;
@@ -265,6 +280,12 @@ public:
                         return 0;
                     case 'R':
                         SwitchBackend(BackendType::OpenGL);
+                        return 0;
+                    case 'Y':
+                        SetVulkanViewMode(VulkanViewMode::Triangle);
+                        return 0;
+                    case 'U':
+                        SetVulkanViewMode(VulkanViewMode::Cube);
                         return 0;
                     case 'E':
                         ToggleErrorExample();
@@ -353,6 +374,8 @@ private:
         AppendMenuA(rendererMenu, MF_STRING, kMenuBackendDX11, "DX11 Renderer\tQ");
         AppendMenuA(rendererMenu, MF_STRING, kMenuBackendDX12, "DX12 Renderer\tW");
         AppendMenuA(rendererMenu, MF_STRING, kMenuBackendOpenGL, "OpenGL Renderer\tR");
+        AppendMenuA(rendererMenu, MF_STRING, kMenuVulkanTriangle, "Vulkan Triangle\tY");
+        AppendMenuA(rendererMenu, MF_STRING, kMenuVulkanCube, "Vulkan Cube\tU");
         AppendMenuA(rendererMenu, MF_SEPARATOR, 0, nullptr);
         AppendMenuA(rendererMenu, MF_STRING, kMenuExit, "Exit");
 
@@ -373,6 +396,8 @@ private:
                 return "DX12";
             case BackendType::OpenGL:
                 return "OpenGL";
+            case BackendType::Vulkan:
+                return "Vulkan";
             default:
                 return "Unknown";
         }
@@ -393,6 +418,9 @@ private:
             case BackendType::OpenGL:
                 candidate = std::make_unique<OpenGLRenderer>();
                 break;
+            case BackendType::Vulkan:
+                candidate = std::make_unique<VulkanRenderer>();
+                break;
         }
 
         if (!candidate->Initialize(hwnd_, width_, height_))
@@ -403,10 +431,54 @@ private:
 
         renderer_ = std::move(candidate);
         backend_ = backend;
+        ApplyVulkanModeToRenderer();
         UpdateMenuChecks();
         UpdateWindowTitle();
         LogLine("APP", "CreateRenderer success active=%s", renderer_->BackendName());
         return true;
+    }
+
+    void ApplyVulkanModeToRenderer()
+    {
+        if (backend_ != BackendType::Vulkan || !renderer_)
+        {
+            return;
+        }
+
+        auto *vkRenderer = dynamic_cast<VulkanRenderer *>(renderer_.get());
+        if (!vkRenderer)
+        {
+            return;
+        }
+
+        vkRenderer->SetRenderMode(vulkanViewMode_ == VulkanViewMode::Triangle
+                                      ? VulkanRenderer::RenderMode::Triangle
+                                      : VulkanRenderer::RenderMode::Cube);
+    }
+
+    void SetVulkanViewMode(VulkanViewMode mode)
+    {
+        const bool changed = (vulkanViewMode_ != mode);
+        vulkanViewMode_ = mode;
+        if (backend_ != BackendType::Vulkan)
+        {
+            LogLine("APP",
+                    "SetVulkanViewMode mode=%s request backend switch to Vulkan",
+                    vulkanViewMode_ == VulkanViewMode::Triangle ? "Triangle" : "Cube");
+            SwitchBackend(BackendType::Vulkan);
+            return;
+        }
+
+        if (changed)
+        {
+            ApplyVulkanModeToRenderer();
+            UpdateMenuChecks();
+            UpdateWindowTitle();
+            RenderFrame();
+            LogLine("APP",
+                    "SetVulkanViewMode mode=%s",
+                    vulkanViewMode_ == VulkanViewMode::Triangle ? "Triangle" : "Cube");
+        }
     }
 
     bool SwitchBackend(BackendType backend)
@@ -504,9 +576,14 @@ private:
         {
             activeBackend = kMenuBackendOpenGL;
         }
+        else if (backend_ == BackendType::Vulkan)
+        {
+            activeBackend =
+                (vulkanViewMode_ == VulkanViewMode::Triangle) ? kMenuVulkanTriangle : kMenuVulkanCube;
+        }
         CheckMenuRadioItem(menu,
                            kMenuBackendDX11,
-                           kMenuBackendOpenGL,
+                           kMenuVulkanCube,
                            activeBackend,
                            MF_BYCOMMAND);
 
@@ -534,7 +611,12 @@ private:
             title << " | Error Example ON";
         }
 
-        title << " | Keys: 1-9, F1-F11(10-20), Q=DX11, W=DX12, R=OpenGL, E=Error";
+        if (backend_ == BackendType::Vulkan)
+        {
+            title << " | Vulkan Mode: " << (vulkanViewMode_ == VulkanViewMode::Triangle ? "Triangle" : "Cube");
+        }
+
+        title << " | Keys: 1-9, F1-F11(10-20), Q=DX11, W=DX12, R=OpenGL, Y=VK Triangle, U=VK Cube, E=Error";
         SetWindowTextA(hwnd_, title.str().c_str());
     }
 
@@ -547,6 +629,7 @@ private:
     bool minimized_ = false;
 
     BackendType backend_ = BackendType::DX12;
+    VulkanViewMode vulkanViewMode_ = VulkanViewMode::Triangle;
     int topic_ = 1;
     bool errorExampleEnabled_ = false;
     bool renderingInProgress_ = false;

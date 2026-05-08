@@ -15,6 +15,7 @@ set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(DIRECTX_SRC_DIR ${SRC_DIR}/directx)
 set(METAL_SRC_DIR ${SRC_DIR}/metal)
 set(OPENGL_SRC_DIR ${SRC_DIR}/opengl)
+set(VULKAN_SRC_DIR ${SRC_DIR}/vulkan)
 set(SHARED_SRC_DIR ${SRC_DIR}/shared)
 
 if(APPLE)
@@ -86,21 +87,57 @@ elseif(WIN32)
         ${DIRECTX_SRC_DIR}/DX11Renderer.cpp
         ${DIRECTX_SRC_DIR}/DX12Renderer.cpp
         ${OPENGL_SRC_DIR}/OpenGLRendererWin.cpp
+        ${VULKAN_SRC_DIR}/VulkanRenderer.cpp
     )
 
     set(DIRECTX_HEADERS
         ${DIRECTX_SRC_DIR}/DX11Renderer.h
         ${DIRECTX_SRC_DIR}/DX12Renderer.h
         ${OPENGL_SRC_DIR}/OpenGLRendererWin.h
+        ${VULKAN_SRC_DIR}/VulkanRenderer.h
         ${SHARED_SRC_DIR}/DiagnosticsLog.h
         ${SHARED_SRC_DIR}/DXTeachingShared.h
         ${SHARED_SRC_DIR}/IRendererBackend.h
+    )
+
+    set(VULKAN_SHADER_DIR ${VULKAN_SRC_DIR}/shaders)
+    set(VULKAN_SHADER_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+    set(VULKAN_VERTEX_SHADER ${VULKAN_SHADER_DIR}/teaching.vert)
+    set(VULKAN_FRAGMENT_SHADER ${VULKAN_SHADER_DIR}/teaching.frag)
+    set(VULKAN_VERTEX_SPV ${VULKAN_SHADER_OUTPUT_DIR}/teaching.vert.spv)
+    set(VULKAN_FRAGMENT_SPV ${VULKAN_SHADER_OUTPUT_DIR}/teaching.frag.spv)
+
+    find_package(Vulkan REQUIRED)
+    find_program(GLSLANG_VALIDATOR NAMES glslangValidator glslangValidator.exe REQUIRED)
+
+    add_custom_command(
+        OUTPUT ${VULKAN_VERTEX_SPV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${VULKAN_SHADER_OUTPUT_DIR}
+        COMMAND ${GLSLANG_VALIDATOR} -V --target-env vulkan1.0 -o ${VULKAN_VERTEX_SPV} ${VULKAN_VERTEX_SHADER}
+        DEPENDS ${VULKAN_VERTEX_SHADER}
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT ${VULKAN_FRAGMENT_SPV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${VULKAN_SHADER_OUTPUT_DIR}
+        COMMAND ${GLSLANG_VALIDATOR} -V --target-env vulkan1.0 -o ${VULKAN_FRAGMENT_SPV} ${VULKAN_FRAGMENT_SHADER}
+        DEPENDS ${VULKAN_FRAGMENT_SHADER}
+        VERBATIM
+    )
+
+    add_custom_target(vulkan_shaders
+        DEPENDS
+            ${VULKAN_VERTEX_SPV}
+            ${VULKAN_FRAGMENT_SPV}
     )
 
     add_executable(${APP_NAME} WIN32
         ${DIRECTX_SOURCES}
         ${DIRECTX_HEADERS}
     )
+
+    add_dependencies(${APP_NAME} vulkan_shaders)
 
     source_group(TREE ${SRC_DIR} FILES
         ${DIRECTX_SOURCES}
@@ -110,6 +147,7 @@ elseif(WIN32)
     target_include_directories(${APP_NAME} PRIVATE
         ${DIRECTX_SRC_DIR}
         ${OPENGL_SRC_DIR}
+        ${VULKAN_SRC_DIR}
         ${SHARED_SRC_DIR}
     )
 
@@ -121,6 +159,13 @@ elseif(WIN32)
         user32
         gdi32
         opengl32
+        Vulkan::Vulkan
+    )
+
+    add_custom_command(TARGET ${APP_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${APP_NAME}>/shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${VULKAN_VERTEX_SPV} "$<TARGET_FILE_DIR:${APP_NAME}>/shaders/teaching.vert.spv"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${VULKAN_FRAGMENT_SPV} "$<TARGET_FILE_DIR:${APP_NAME}>/shaders/teaching.frag.spv"
     )
 else()
     add_executable(${APP_NAME}
