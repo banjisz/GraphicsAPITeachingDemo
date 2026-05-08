@@ -13,7 +13,8 @@ namespace dxteaching
 enum class BackendType
 {
     DX11,
-    DX12
+    DX12,
+    OpenGL
 };
 
 class IRendererBackend

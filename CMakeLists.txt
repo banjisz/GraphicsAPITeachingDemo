@@ -85,11 +85,13 @@ elseif(WIN32)
         ${DIRECTX_SRC_DIR}/DXTeachingMain.cpp
         ${DIRECTX_SRC_DIR}/DX11Renderer.cpp
         ${DIRECTX_SRC_DIR}/DX12Renderer.cpp
+        ${OPENGL_SRC_DIR}/OpenGLRendererWin.cpp
     )
 
     set(DIRECTX_HEADERS
         ${DIRECTX_SRC_DIR}/DX11Renderer.h
         ${DIRECTX_SRC_DIR}/DX12Renderer.h
+        ${OPENGL_SRC_DIR}/OpenGLRendererWin.h
         ${SHARED_SRC_DIR}/DiagnosticsLog.h
         ${SHARED_SRC_DIR}/DXTeachingShared.h
         ${SHARED_SRC_DIR}/IRendererBackend.h
@@ -107,6 +109,7 @@ elseif(WIN32)
 
     target_include_directories(${APP_NAME} PRIVATE
         ${DIRECTX_SRC_DIR}
+        ${OPENGL_SRC_DIR}
         ${SHARED_SRC_DIR}
     )
 
@@ -117,6 +120,7 @@ elseif(WIN32)
         d3dcompiler
         user32
         gdi32
+        opengl32
     )
 else()
     add_executable(${APP_NAME}

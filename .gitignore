@@ -103,6 +103,7 @@ DerivedData/
 **/xcshareddata/WorkspaceSettings.xcsettings
 
 .codex
+build-win
 
 CMakeFiles
 

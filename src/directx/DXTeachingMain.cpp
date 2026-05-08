@@ -12,6 +12,7 @@
 #include "DX11Renderer.h"
 #include "DX12Renderer.h"
 #include "IRendererBackend.h"
+#include "OpenGLRendererWin.h"
 
 namespace dxteaching
 {
@@ -26,6 +27,7 @@ constexpr UINT kMenuTopicMax = kMenuTopicBase + kTopicCount - 1;
 constexpr UINT kMenuToggleError = 2001;
 constexpr UINT kMenuBackendDX11 = 2101;
 constexpr UINT kMenuBackendDX12 = 2102;
+constexpr UINT kMenuBackendOpenGL = 2103;
 constexpr UINT kMenuExit = 2199;
 constexpr UINT_PTR kRenderTimerId = 1;
 constexpr UINT kRenderTimerIntervalMs = 16;
@@ -41,7 +43,7 @@ public:
 
         WNDCLASSEXA windowClass{};
         windowClass.cbSize = sizeof(windowClass);
-        windowClass.style = CS_HREDRAW | CS_VREDRAW;
+        windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
         windowClass.lpfnWndProc = &DemoApplication::WndProc;
         windowClass.hInstance = instance_;
         windowClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
@@ -60,7 +62,7 @@ public:
         hwnd_ = CreateWindowExA(0,
                                 kWindowClassName,
                                 "Graphics API Teaching Demo",
-                                WS_OVERLAPPEDWINDOW,
+                                WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
                                 CW_USEDEFAULT,
                                 CW_USEDEFAULT,
                                 rect.right - rect.left,
@@ -193,6 +195,9 @@ public:
                     case kMenuBackendDX12:
                         SwitchBackend(BackendType::DX12);
                         return 0;
+                    case kMenuBackendOpenGL:
+                        SwitchBackend(BackendType::OpenGL);
+                        return 0;
                     case kMenuExit:
                         DestroyWindow(hwnd_);
                         return 0;
@@ -257,6 +262,9 @@ public:
                         return 0;
                     case 'W':
                         SwitchBackend(BackendType::DX12);
+                        return 0;
+                    case 'R':
+                        SwitchBackend(BackendType::OpenGL);
                         return 0;
                     case 'E':
                         ToggleErrorExample();
@@ -344,6 +352,7 @@ private:
 
         AppendMenuA(rendererMenu, MF_STRING, kMenuBackendDX11, "DX11 Renderer\tQ");
         AppendMenuA(rendererMenu, MF_STRING, kMenuBackendDX12, "DX12 Renderer\tW");
+        AppendMenuA(rendererMenu, MF_STRING, kMenuBackendOpenGL, "OpenGL Renderer\tR");
         AppendMenuA(rendererMenu, MF_SEPARATOR, 0, nullptr);
         AppendMenuA(rendererMenu, MF_STRING, kMenuExit, "Exit");
 
@@ -354,22 +363,41 @@ private:
         DrawMenuBar(hwnd_);
     }
 
+    static const char *BackendTypeName(BackendType type)
+    {
+        switch (type)
+        {
+            case BackendType::DX11:
+                return "DX11";
+            case BackendType::DX12:
+                return "DX12";
+            case BackendType::OpenGL:
+                return "OpenGL";
+            default:
+                return "Unknown";
+        }
+    }
+
     bool CreateRenderer(BackendType backend)
     {
-        LogLine("APP", "CreateRenderer begin target=%s", backend == BackendType::DX11 ? "DX11" : "DX12");
+        LogLine("APP", "CreateRenderer begin target=%s", BackendTypeName(backend));
         std::unique_ptr<IRendererBackend> candidate;
-        if (backend == BackendType::DX11)
+        switch (backend)
         {
-            candidate = std::make_unique<DX11Renderer>();
-        }
-        else
-        {
-            candidate = std::make_unique<DX12Renderer>();
+            case BackendType::DX11:
+                candidate = std::make_unique<DX11Renderer>();
+                break;
+            case BackendType::DX12:
+                candidate = std::make_unique<DX12Renderer>();
+                break;
+            case BackendType::OpenGL:
+                candidate = std::make_unique<OpenGLRenderer>();
+                break;
         }
 
         if (!candidate->Initialize(hwnd_, width_, height_))
         {
-            LogLine("APP", "CreateRenderer failed target=%s", backend == BackendType::DX11 ? "DX11" : "DX12");
+            LogLine("APP", "CreateRenderer failed target=%s", BackendTypeName(backend));
             return false;
         }
 
@@ -383,7 +411,7 @@ private:
 
     bool SwitchBackend(BackendType backend)
     {
-        LogLine("APP", "SwitchBackend request target=%s current=%s", backend == BackendType::DX11 ? "DX11" : "DX12", renderer_ ? renderer_->BackendName() : "None");
+        LogLine("APP", "SwitchBackend request target=%s current=%s", BackendTypeName(backend), renderer_ ? renderer_->BackendName() : "None");
         if (backend_ == backend && renderer_)
         {
             LogLine("APP", "SwitchBackend ignored because already active");
@@ -400,6 +428,7 @@ private:
             previousRenderer.reset();
         }
 
+
         if (CreateRenderer(backend))
         {
             LogLine("APP", "SwitchBackend success active=%s", renderer_ ? renderer_->BackendName() : "None");
@@ -409,7 +438,7 @@ private:
         }
 
         std::ostringstream error;
-        error << "Failed to initialize " << (backend == BackendType::DX11 ? "DX11" : "DX12")
+        error << "Failed to initialize " << BackendTypeName(backend)
               << " backend. Reverting to previous backend.";
         MessageBoxA(hwnd_, error.str().c_str(), "Renderer Switch Error", MB_ICONWARNING);
 
@@ -466,10 +495,18 @@ private:
                            kMenuTopicBase + static_cast<UINT>(ClampTopic(topic_) - 1),
                            MF_BYCOMMAND);
 
-        const UINT activeBackend = (backend_ == BackendType::DX11) ? kMenuBackendDX11 : kMenuBackendDX12;
+        UINT activeBackend = kMenuBackendDX12;
+        if (backend_ == BackendType::DX11)
+        {
+            activeBackend = kMenuBackendDX11;
+        }
+        else if (backend_ == BackendType::OpenGL)
+        {
+            activeBackend = kMenuBackendOpenGL;
+        }
         CheckMenuRadioItem(menu,
                            kMenuBackendDX11,
-                           kMenuBackendDX12,
+                           kMenuBackendOpenGL,
                            activeBackend,
                            MF_BYCOMMAND);
 
@@ -497,7 +534,7 @@ private:
             title << " | Error Example ON";
         }
 
-        title << " | Keys: 1-9, F1-F11(10-20), Q=DX11, W=DX12, E=Error";
+        title << " | Keys: 1-9, F1-F11(10-20), Q=DX11, W=DX12, R=OpenGL, E=Error";
         SetWindowTextA(hwnd_, title.str().c_str());
     }
 
