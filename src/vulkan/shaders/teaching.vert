@@ -12,6 +12,8 @@ layout(location = 4) out float outErrorFlag;
 layout(location = 5) out vec3 outWorldPos;
 layout(location = 6) out vec3 outNormal;
 layout(location = 7) out float outMode;
+layout(location = 8) out vec3 outLocalPos;
+layout(location = 9) out vec3 outLocalNormal;
 
 layout(push_constant) uniform PushConstants
 {
@@ -47,6 +49,8 @@ void main()
 
     vec3 worldPos = inPosition;
     vec3 worldNormal = normalize(inNormal);
+    vec3 localPos = inPosition;
+    vec3 localNormal = normalize(inNormal);
     vec2 uv = inPosition.xy * 0.5 + 0.5;
 
     if (mode < 0.5)
@@ -85,10 +89,13 @@ void main()
         }
 
         vec3 viewPos = worldPos + vec3(0.0, 0.0, 3.2);
-        float invZ = 1.0 / max(0.25, viewPos.z);
-        vec2 projected = viewPos.xy * invZ;
-        projected.x /= aspect;
-        gl_Position = vec4(projected, clamp(viewPos.z * 0.12, 0.0, 1.0), 1.0);
+        float viewZ = max(0.05, viewPos.z);
+        const float nearPlane = 0.1;
+        const float farPlane = 20.0;
+        const float fovY = 1.04719755; // 60 deg
+        float focal = 1.0 / tan(fovY * 0.5);
+        float clipZ = (viewZ * farPlane - nearPlane * farPlane) / (farPlane - nearPlane);
+        gl_Position = vec4((viewPos.x / aspect) * focal, viewPos.y * focal, clipZ, viewZ);
 
         uv = worldPos.xy * 0.5 + 0.5;
     }
@@ -101,4 +108,6 @@ void main()
     outWorldPos = worldPos;
     outNormal = worldNormal;
     outMode = mode;
+    outLocalPos = localPos;
+    outLocalNormal = localNormal;
 }

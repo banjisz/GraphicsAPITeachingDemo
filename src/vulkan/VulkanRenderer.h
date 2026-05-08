@@ -81,6 +81,10 @@ private:
     bool CreateFramebuffers();
     bool AllocateCommandBuffers();
     bool CreateVertexBuffer();
+    bool CreateMaterialResources();
+    bool CreateMaterialDescriptorSetLayout();
+    bool CreateMaterialTextures();
+    bool CreateMaterialDescriptorSet();
     bool CreateSyncObjects();
     void CleanupSwapchainResources();
     bool RecreateSwapchain();
@@ -97,6 +101,18 @@ private:
                       VkMemoryPropertyFlags properties,
                       VkBuffer &buffer,
                       VkDeviceMemory &memory) const;
+    bool CreateTextureImage(const std::vector<uint32_t> &pixels,
+                            VkImage &image,
+                            VkDeviceMemory &memory);
+    VkCommandBuffer BeginSingleTimeCommands() const;
+    bool EndSingleTimeCommands(VkCommandBuffer commandBuffer) const;
+    bool TransitionImageLayout(VkImage image,
+                               VkImageLayout oldLayout,
+                               VkImageLayout newLayout) const;
+    bool CopyBufferToImage(VkBuffer buffer,
+                           VkImage image,
+                           uint32_t width,
+                           uint32_t height) const;
     bool RecordCommandBuffer(VkCommandBuffer commandBuffer,
                              uint32_t imageIndex,
                              const FrameSettings &settings);
@@ -143,6 +159,7 @@ private:
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkImage depthImage_ = VK_NULL_HANDLE;
     VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
@@ -154,6 +171,15 @@ private:
 
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
+    VkImage albedoImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory albedoImageMemory_ = VK_NULL_HANDLE;
+    VkImageView albedoImageView_ = VK_NULL_HANDLE;
+    VkImage normalImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory normalImageMemory_ = VK_NULL_HANDLE;
+    VkImageView normalImageView_ = VK_NULL_HANDLE;
+    VkSampler materialSampler_ = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet descriptorSet_ = VK_NULL_HANDLE;
     uint32_t triangleFirstVertex_ = 0;
     uint32_t triangleVertexCount_ = 0;
     uint32_t cubeFirstVertex_ = 0;

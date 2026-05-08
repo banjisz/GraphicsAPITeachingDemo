@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 namespace dxteaching
 {
@@ -24,6 +25,59 @@ inline uint32_t ScaledRenderDimension(uint32_t value)
         1u,
         (value * kInternalRenderScaleNumerator + kInternalRenderScaleDenominator - 1u) /
             kInternalRenderScaleDenominator);
+}
+
+inline std::vector<uint32_t> BuildMaterialAlbedoTexels()
+{
+    std::vector<uint32_t> pixels(static_cast<size_t>(kMaterialTextureSize) * kMaterialTextureSize);
+    for (uint32_t y = 0; y < kMaterialTextureSize; ++y)
+    {
+        for (uint32_t x = 0; x < kMaterialTextureSize; ++x)
+        {
+            const float u = static_cast<float>(x) / static_cast<float>(kMaterialTextureSize);
+            const float v = static_cast<float>(y) / static_cast<float>(kMaterialTextureSize);
+            const uint32_t cellSize = std::max(1u, kMaterialTextureSize / 8u);
+            const bool checker = (((x / cellSize) + (y / cellSize)) & 1u) == 0u;
+            const float rLinear = checker ? (0.2f + 0.7f * u) : (0.1f + 0.3f * v);
+            const float gLinear = checker ? (0.4f + 0.4f * v) : (0.2f + 0.5f * u);
+            const float bLinear = checker ? (0.8f - 0.5f * u) : (0.15f + 0.45f * v);
+            const uint8_t r = static_cast<uint8_t>(std::clamp(rLinear * 255.0f, 0.0f, 255.0f));
+            const uint8_t g = static_cast<uint8_t>(std::clamp(gLinear * 255.0f, 0.0f, 255.0f));
+            const uint8_t b = static_cast<uint8_t>(std::clamp(bLinear * 255.0f, 0.0f, 255.0f));
+            const uint8_t a = static_cast<uint8_t>(checker ? 112u : 196u);
+            pixels[static_cast<size_t>(y) * kMaterialTextureSize + x] =
+                static_cast<uint32_t>(r) |
+                (static_cast<uint32_t>(g) << 8u) |
+                (static_cast<uint32_t>(b) << 16u) |
+                (static_cast<uint32_t>(a) << 24u);
+        }
+    }
+    return pixels;
+}
+
+inline std::vector<uint32_t> BuildMaterialNormalTexels()
+{
+    std::vector<uint32_t> pixels(static_cast<size_t>(kMaterialTextureSize) * kMaterialTextureSize);
+    for (uint32_t y = 0; y < kMaterialTextureSize; ++y)
+    {
+        for (uint32_t x = 0; x < kMaterialTextureSize; ++x)
+        {
+            const float u = static_cast<float>(x) / static_cast<float>(kMaterialTextureSize - 1u) * 2.0f - 1.0f;
+            const float v = static_cast<float>(y) / static_cast<float>(kMaterialTextureSize - 1u) * 2.0f - 1.0f;
+            const float nx = std::sin(u * 9.0f) * 0.35f;
+            const float ny = std::cos(v * 9.0f) * 0.35f;
+            const float nz = std::sqrt(std::max(0.05f, 1.0f - nx * nx - ny * ny));
+            const uint8_t r = static_cast<uint8_t>(std::clamp(nx * 127.0f + 128.0f, 0.0f, 255.0f));
+            const uint8_t g = static_cast<uint8_t>(std::clamp(ny * 127.0f + 128.0f, 0.0f, 255.0f));
+            const uint8_t b = static_cast<uint8_t>(std::clamp(nz * 127.0f + 128.0f, 0.0f, 255.0f));
+            pixels[static_cast<size_t>(y) * kMaterialTextureSize + x] =
+                static_cast<uint32_t>(r) |
+                (static_cast<uint32_t>(g) << 8u) |
+                (static_cast<uint32_t>(b) << 16u) |
+                (255u << 24u);
+        }
+    }
+    return pixels;
 }
 
 struct FrameSettings

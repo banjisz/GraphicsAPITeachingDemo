@@ -8,12 +8,131 @@ layout(location = 4) in float inErrorFlag;
 layout(location = 5) in vec3 inWorldPos;
 layout(location = 6) in vec3 inNormal;
 layout(location = 7) in float inMode;
+layout(location = 8) in vec3 inLocalPos;
+layout(location = 9) in vec3 inLocalNormal;
 
 layout(location = 0) out vec4 outColor;
+layout(set = 0, binding = 0) uniform sampler2D uAlbedoTex;
+layout(set = 0, binding = 1) uniform sampler2D uNormalTex;
 
 float hash12(vec2 p)
 {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+const float PI = 3.14159265;
+
+float saturateFloat(float x)
+{
+    return clamp(x, 0.0, 1.0);
+}
+
+vec2 materialUV(vec3 localPos, vec3 localNormal)
+{
+    vec3 an = abs(localNormal);
+    vec2 uv = (an.z > an.x && an.z > an.y) ? localPos.xy : ((an.x > an.y) ? localPos.zy : localPos.xz);
+    return fract(uv * 0.78 + 0.5);
+}
+
+vec4 sampleMaterialAlbedoAndPattern(vec2 uv, vec3 vertexColor)
+{
+    vec4 sampleAlbedo = texture(uAlbedoTex, uv);
+    vec3 tex = sampleAlbedo.rgb;
+    vec3 tint = mix(vec3(1.0), clamp(vertexColor * 1.05, vec3(0.0), vec3(1.0)), 0.35);
+    vec3 albedo = max(tex * tint * 1.05, vec3(0.0));
+    return vec4(albedo, sampleAlbedo.a);
+}
+
+vec3 applyProceduralNormal(vec2 uv, vec3 worldNormal)
+{
+    vec3 N = normalize(worldNormal);
+    vec3 map = texture(uNormalTex, uv).xyz * 2.0 - 1.0;
+
+    vec3 helper = abs(N.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 T = normalize(cross(helper, N));
+    vec3 B = cross(N, T);
+    return normalize(T * map.x * 0.26 + B * map.y * 0.26 + N * max(0.45, map.z));
+}
+
+float distributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a = max(0.04, roughness * roughness);
+    float a2 = a * a;
+    float ndh = saturateFloat(dot(N, H));
+    float denom = ndh * ndh * (a2 - 1.0) + 1.0;
+    return a2 / max(0.0001, PI * denom * denom);
+}
+
+float geometrySchlickGGX(float ndv, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return ndv / max(0.0001, ndv * (1.0 - k) + k);
+}
+
+float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    return geometrySchlickGGX(saturateFloat(dot(N, V)), roughness) *
+           geometrySchlickGGX(saturateFloat(dot(N, L)), roughness);
+}
+
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(saturateFloat(1.0 - cosTheta), 5.0);
+}
+
+vec3 approximateEnvReflection(vec3 R, float t)
+{
+    float sky = saturateFloat(R.y * 0.5 + 0.5);
+    vec3 skyCol = mix(vec3(0.10, 0.14, 0.20), vec3(0.52, 0.70, 0.95), sky);
+    vec3 groundCol = vec3(0.08, 0.06, 0.05);
+    vec3 env = mix(groundCol, skyCol, sky);
+
+    float horizon = exp(-abs(R.y) * 3.4);
+    env += horizon * vec3(0.10, 0.12, 0.16);
+
+    float bands = 0.5 + 0.5 * sin((R.x + R.z) * 18.0 + t * 1.2);
+    env += 0.06 * bands * vec3(0.25, 0.35, 0.55);
+    return max(env, vec3(0.0));
+}
+
+float distributionAnisotropicGGX(vec3 N, vec3 H, vec3 T, vec3 B, float ax, float ay)
+{
+    float ndh = saturateFloat(dot(N, H));
+    float tdh = dot(T, H);
+    float bdh = dot(B, H);
+    float denom = (tdh * tdh) / max(0.0001, ax * ax) +
+                  (bdh * bdh) / max(0.0001, ay * ay) +
+                  ndh * ndh;
+    return 1.0 / max(0.0001, PI * ax * ay * denom * denom);
+}
+
+vec2 envBRDFApprox(float ndv, float roughness)
+{
+    const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+    const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * ndv)) * r.x + r.y;
+    return vec2(-1.04, 1.04) * a004 + r.zw;
+}
+
+vec3 prefilteredEnvReflection(vec3 R, float roughness, float t)
+{
+    vec3 sharp = approximateEnvReflection(R, t);
+    vec3 blurA = approximateEnvReflection(normalize(mix(R, vec3(0.0, 1.0, 0.0), 0.40 + 0.35 * roughness)), t * 0.55);
+    vec3 blurB = approximateEnvReflection(normalize(mix(R, vec3(0.0, 0.0, 1.0), 0.30 + 0.45 * roughness)), -t * 0.35);
+    vec3 blurred = (blurA + blurB) * 0.5;
+    return max(mix(sharp, blurred, roughness * roughness), vec3(0.0));
+}
+
+vec3 acesToneMap(vec3 x)
+{
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
 vec3 applyTopic(int topic, vec3 color, vec2 uv, float t)
@@ -321,11 +440,84 @@ void main()
     vec3 color = inColor;
     if (inMode > 0.5)
     {
-        vec3 N = normalize(inNormal);
-        vec3 L = normalize(vec3(-0.38, 0.68, 0.63));
+        vec3 N0 = normalize(inNormal);
+        vec2 mUv = materialUV(inLocalPos, normalize(inLocalNormal));
+        vec4 materialSample = sampleMaterialAlbedoAndPattern(mUv, inColor);
+        vec3 baseColor = materialSample.rgb;
+        float materialPattern = materialSample.a;
+
+        vec3 N = applyProceduralNormal(mUv, N0);
+        vec3 L = normalize(vec3(-0.35, 0.60, 0.70));
         vec3 V = normalize(vec3(0.0, 1.4, -4.5) - inWorldPos);
-        float ndl = max(dot(N, L), 0.0);
-        color = color * (0.18 + 0.82 * ndl);
+        vec3 H = normalize(L + V);
+
+        float roughness = mix(0.26, 0.72, materialPattern);
+        float metallic = mix(0.04, 0.42, saturateFloat(materialPattern * 1.2 - 0.2));
+
+        if (topic == 8 || topic == 18)
+        {
+            metallic = min(1.0, metallic + 0.22);
+        }
+        if (topic == 19)
+        {
+            roughness = min(0.95, roughness + 0.12);
+        }
+        if (topic == 20)
+        {
+            roughness = max(0.12, roughness - 0.08);
+        }
+        if (inErrorFlag > 0.5)
+        {
+            roughness = min(1.0, roughness + 0.15);
+            metallic = max(0.0, metallic - 0.12);
+        }
+
+        float ndl = saturateFloat(dot(N, L));
+        float ndv = saturateFloat(dot(N, V));
+        vec3 F0 = mix(vec3(0.04), baseColor, metallic);
+
+        float D = distributionGGX(N, H, roughness);
+        float G = geometrySmith(N, V, L, roughness);
+        vec3 F = fresnelSchlick(saturateFloat(dot(H, V)), F0);
+        vec3 specular = (D * G * F) / max(0.0001, 4.0 * ndl * ndv);
+
+        vec3 helper = abs(N.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+        vec3 T = normalize(cross(helper, N));
+        vec3 B = normalize(cross(N, T));
+        float anisotropy = clamp(0.22 + 0.42 * metallic + 0.08 * (1.0 - roughness), 0.15, 0.75);
+        if (topic == 18)
+        {
+            anisotropy = min(0.85, anisotropy + 0.10);
+        }
+        if (inErrorFlag > 0.5)
+        {
+            anisotropy *= 0.70;
+        }
+        float a2 = roughness * roughness;
+        float ax = max(0.05, a2 / (1.0 + anisotropy));
+        float ay = max(0.05, a2 * (1.0 + anisotropy));
+        float DAniso = distributionAnisotropicGGX(N, H, T, B, ax, ay);
+        vec3 specularAniso = (DAniso * G * F) / max(0.0001, 4.0 * ndl * ndv);
+
+        vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
+        vec3 diffuse = kD * baseColor / PI;
+        vec3 ambient = baseColor * 0.11;
+
+        vec3 R = reflect(-V, N);
+        vec3 envDiffuse = approximateEnvReflection(N, inTime * 0.22);
+        vec3 prefilteredEnv = prefilteredEnvReflection(R, roughness, inTime);
+        vec2 brdf = envBRDFApprox(ndv, roughness);
+        vec3 envSpec = prefilteredEnv * (F0 * brdf.x + brdf.y) * (0.10 + 0.22 * (1.0 - roughness));
+        vec3 iblDiffuse = envDiffuse * diffuse * 0.16;
+
+        float clearCoat = pow(saturateFloat(dot(reflect(-L, N), V)), mix(64.0, 144.0, 1.0 - roughness)) *
+                          (0.02 + 0.03 * metallic);
+
+        color = ambient +
+                (diffuse + specular + specularAniso * 0.22) * ndl * 2.7 +
+                iblDiffuse +
+                envSpec +
+                vec3(clearCoat);
         color = applyTopicDxStyle(topic, color, N, inWorldPos, inTime);
     }
     else
@@ -351,6 +543,17 @@ void main()
             color = pow(max(color * jitter, vec3(0.0)), vec3(0.80));
             color += vec3(0.03, 0.0, -0.01);
         }
+    }
+
+    if (inMode > 0.5)
+    {
+        float exposure = 1.18;
+        if (topic == 9 || topic == 14)
+        {
+            exposure = 1.26;
+        }
+        color = acesToneMap(max(color, vec3(0.0)) * exposure);
+        color = pow(color, vec3(1.0 / 2.2));
     }
 
     outColor = vec4(clamp(color, vec3(0.0), vec3(1.0)), 1.0);
