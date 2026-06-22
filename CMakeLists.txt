@@ -104,8 +104,10 @@ elseif(WIN32)
     set(VULKAN_SHADER_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
     set(VULKAN_VERTEX_SHADER ${VULKAN_SHADER_DIR}/teaching.vert)
     set(VULKAN_FRAGMENT_SHADER ${VULKAN_SHADER_DIR}/teaching.frag)
+    set(VULKAN_COMPUTE_SHADER ${VULKAN_SHADER_DIR}/postprocess.comp)
     set(VULKAN_VERTEX_SPV ${VULKAN_SHADER_OUTPUT_DIR}/teaching.vert.spv)
     set(VULKAN_FRAGMENT_SPV ${VULKAN_SHADER_OUTPUT_DIR}/teaching.frag.spv)
+    set(VULKAN_COMPUTE_SPV ${VULKAN_SHADER_OUTPUT_DIR}/postprocess.comp.spv)
 
     find_package(Vulkan REQUIRED)
     find_program(GLSLANG_VALIDATOR NAMES glslangValidator glslangValidator.exe REQUIRED)
@@ -126,10 +128,19 @@ elseif(WIN32)
         VERBATIM
     )
 
+    add_custom_command(
+        OUTPUT ${VULKAN_COMPUTE_SPV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${VULKAN_SHADER_OUTPUT_DIR}
+        COMMAND ${GLSLANG_VALIDATOR} -V --target-env vulkan1.0 -o ${VULKAN_COMPUTE_SPV} ${VULKAN_COMPUTE_SHADER}
+        DEPENDS ${VULKAN_COMPUTE_SHADER}
+        VERBATIM
+    )
+
     add_custom_target(vulkan_shaders
         DEPENDS
             ${VULKAN_VERTEX_SPV}
             ${VULKAN_FRAGMENT_SPV}
+            ${VULKAN_COMPUTE_SPV}
     )
 
     add_executable(${APP_NAME} WIN32
@@ -166,6 +177,7 @@ elseif(WIN32)
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${APP_NAME}>/shaders"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${VULKAN_VERTEX_SPV} "$<TARGET_FILE_DIR:${APP_NAME}>/shaders/teaching.vert.spv"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${VULKAN_FRAGMENT_SPV} "$<TARGET_FILE_DIR:${APP_NAME}>/shaders/teaching.frag.spv"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${VULKAN_COMPUTE_SPV} "$<TARGET_FILE_DIR:${APP_NAME}>/shaders/postprocess.comp.spv"
     )
 else()
     add_executable(${APP_NAME}

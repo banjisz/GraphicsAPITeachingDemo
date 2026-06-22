@@ -34,6 +34,19 @@
 #define GL_ARRAY_BUFFER 0x8892
 #define GL_ELEMENT_ARRAY_BUFFER 0x8893
 #define GL_STATIC_DRAW 0x88E4
+#define GL_FRAMEBUFFER 0x8D40
+#define GL_RENDERBUFFER 0x8D41
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_DEPTH_ATTACHMENT 0x8D00
+#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+#define GL_TEXTURE0 0x84C0
+#define GL_TEXTURE1 0x84C1
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_RGBA16F 0x881A
+#define GL_RGBA 0x1908
+#define GL_DEPTH_COMPONENT24 0x81A6
+#define GL_UNIFORM_BUFFER 0x8A11
+#define GL_DYNAMIC_DRAW 0x88E8
 
 typedef char GLchar;
 typedef intptr_t GLsizeiptr;
@@ -64,6 +77,27 @@ typedef void(APIENTRY *PFNGLBUFFERDATAPROC)(GLenum target, GLsizeiptr size, cons
 typedef void(APIENTRY *PFNGLDELETEBUFFERSPROC)(GLsizei n, const GLuint *buffers);
 typedef void(APIENTRY *PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint index);
 typedef void(APIENTRY *PFNGLVERTEXATTRIBPOINTERPROC)(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer);
+
+typedef void(APIENTRY *PFNGLDRAWELEMENTSINSTANCEDPROC)(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instancecount);
+typedef void(APIENTRY *PFNGLVERTEXATTRIBDIVISORPROC)(GLuint index, GLuint divisor);
+typedef void(APIENTRY *PFNGLBINDBUFFERBASEPROC)(GLenum target, GLuint index, GLuint buffer);
+typedef GLuint(APIENTRY *PFNGLGETUNIFORMBLOCKINDEXPROC)(GLuint program, const GLchar *uniformBlockName);
+typedef void(APIENTRY *PFNGLUNIFORMBLOCKBINDINGPROC)(GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding);
+typedef void(APIENTRY *PFNGLBUFFERSUBDATAPROC)(GLenum target, intptr_t offset, GLsizeiptr size, const void *data);
+typedef void(APIENTRY *PFNGLGENFRAMEBUFFERSPROC)(GLsizei n, GLuint *framebuffers);
+typedef void(APIENTRY *PFNGLBINDFRAMEBUFFERPROC)(GLenum target, GLuint framebuffer);
+typedef void(APIENTRY *PFNGLDELETEFRAMEBUFFERSPROC)(GLsizei n, const GLuint *framebuffers);
+typedef void(APIENTRY *PFNGLFRAMEBUFFERTEXTURE2DPROC)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+typedef void(APIENTRY *PFNGLFRAMEBUFFERRENDERBUFFERPROC)(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
+typedef GLenum(APIENTRY *PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum target);
+typedef void(APIENTRY *PFNGLGENRENDERBUFFERSPROC)(GLsizei n, GLuint *renderbuffers);
+typedef void(APIENTRY *PFNGLBINDRENDERBUFFERPROC)(GLenum target, GLuint renderbuffer);
+typedef void(APIENTRY *PFNGLRENDERBUFFERSTORAGEPROC)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+typedef void(APIENTRY *PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint *renderbuffers);
+typedef void(APIENTRY *PFNGLACTIVETEXTUREPROC)(GLenum texture);
+typedef void(APIENTRY *PFNGLUNIFORM1IPROC)(GLint location, GLint v0);
+typedef void(APIENTRY *PFNGLUNIFORM2FPROC)(GLint location, GLfloat v0, GLfloat v1);
+typedef void(APIENTRY *PFNGLUNIFORM1FPROC)(GLint location, GLfloat v0);
 
 typedef HGLRC(WINAPI *PFNWGLCREATECONTEXTATTRIBSARBPROC)(HDC hDC, HGLRC hShareContext, const int *attribList);
 typedef BOOL(WINAPI *PFNWGLCHOOSEPIXELFORMATARBPROC)(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
@@ -96,6 +130,27 @@ static PFNGLDELETEBUFFERSPROC glDeleteBuffers_;
 static PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray_;
 static PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer_;
 
+static PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers_;
+static PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer_;
+static PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers_;
+static PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D_;
+static PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer_;
+static PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus_;
+static PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers_;
+static PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer_;
+static PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage_;
+static PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers_;
+static PFNGLACTIVETEXTUREPROC glActiveTexture_;
+static PFNGLUNIFORM1IPROC glUniform1i_;
+static PFNGLUNIFORM2FPROC glUniform2f_;
+static PFNGLUNIFORM1FPROC glUniform1f_;
+static PFNGLDRAWELEMENTSINSTANCEDPROC glDrawElementsInstanced_;
+static PFNGLVERTEXATTRIBDIVISORPROC glVertexAttribDivisor_;
+static PFNGLBINDBUFFERBASEPROC glBindBufferBase_;
+static PFNGLGETUNIFORMBLOCKINDEXPROC glGetUniformBlockIndex_;
+static PFNGLUNIFORMBLOCKBINDINGPROC glUniformBlockBinding_;
+static PFNGLBUFFERSUBDATAPROC glBufferSubData_;
+
 static PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB_;
 static PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB_;
 static PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT_;
@@ -110,20 +165,27 @@ layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec3 aColor;
 
-uniform mat4 uWorld;
+layout(std140) uniform InstanceBlock
+{
+    mat4 uWorldMatrices[64];
+};
+
 uniform mat4 uViewProj;
 
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec3 vColor;
+flat out int vInstanceID;
 
 void main()
 {
-    vec4 worldPos = uWorld * vec4(aPosition, 1.0);
+    mat4 world = uWorldMatrices[gl_InstanceID];
+    vec4 worldPos = world * vec4(aPosition, 1.0);
     gl_Position = uViewProj * worldPos;
     vWorldPos = worldPos.xyz;
-    vNormal = normalize((uWorld * vec4(aNormal, 0.0)).xyz);
+    vNormal = normalize((world * vec4(aNormal, 0.0)).xyz);
     vColor = aColor;
+    vInstanceID = gl_InstanceID;
 }
 )";
 
@@ -133,6 +195,7 @@ static const char *kFragmentShaderSource = R"(
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec3 vColor;
+flat in int vInstanceID;
 
 uniform vec4 uLightDir;
 uniform vec4 uCameraPosTime;
@@ -494,9 +557,12 @@ bool OpenGLRenderer::Initialize(HWND hwnd, uint32_t width, uint32_t height)
     CreateGeometry();
 
     glEnable(GL_DEPTH_TEST);
-    // Mesh winding between DX and GL paths can differ on some drivers/platforms.
-    // Disable culling to guarantee visible output while switching backends.
     glDisable(GL_CULL_FACE);
+
+    if (!CreatePostProcessResources())
+    {
+        LogLine("OGL", "Post-process resources creation failed (non-fatal)");
+    }
 
     LogLine("OGL", "Initialize success, GL_VERSION=%s", reinterpret_cast<const char *>(glGetString(GL_VERSION)));
     return true;
@@ -514,6 +580,12 @@ void OpenGLRenderer::Resize(uint32_t width, uint32_t height)
     {
         wglMakeCurrent(hdc_, hglrc_);
         glViewport(0, 0, static_cast<GLsizei>(width_), static_cast<GLsizei>(height_));
+
+        if (sceneFbo_ && width_ > 0 && height_ > 0)
+        {
+            DestroyPostProcessResources();
+            CreatePostProcessResources();
+        }
     }
 }
 
@@ -528,6 +600,12 @@ void OpenGLRenderer::Render(const FrameSettings &settings)
     {
         LogLine("OGL", "wglMakeCurrent failed in Render, error=%lu", GetLastError());
         return;
+    }
+
+    const bool usePostProcess = (sceneFbo_ != 0);
+    if (usePostProcess)
+    {
+        glBindFramebuffer_(GL_FRAMEBUFFER, sceneFbo_);
     }
 
     float clearColor[4];
@@ -557,8 +635,9 @@ void OpenGLRenderer::Render(const FrameSettings &settings)
     glBindVertexArray_(vao_);
 
     TopicRuntimeProfile profile = BuildTopicRuntimeProfile(settings.topic, settings.errorExampleEnabled);
-    uint32_t objectCount = profile.objectCount;
+    uint32_t objectCount = (profile.objectCount < kMaxInstances) ? profile.objectCount : kMaxInstances;
 
+    float instanceMatrices[64 * 16];
     for (uint32_t obj = 0; obj < objectCount; ++obj)
     {
         float angle = settings.elapsedSeconds * profile.rotationSpeed +
@@ -566,21 +645,36 @@ void OpenGLRenderer::Render(const FrameSettings &settings)
         float offsetX = (objectCount > 1) ? 2.2f * std::cos(angle) : 0.0f;
         float offsetZ = (objectCount > 1) ? 2.2f * std::sin(angle) : 0.0f;
 
-        float world[16];
         float rotation[16];
         Mat4RotateY(rotation, angle);
 
+        float world[16];
         Mat4Identity(world);
         world[12] = offsetX;
         world[14] = offsetZ;
         Mat4Multiply(world, world, rotation);
 
-        glUniformMatrix4fv_(locWorld_, 1, GL_FALSE, world);
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount_), GL_UNSIGNED_INT, nullptr);
+        memcpy(&instanceMatrices[obj * 16], world, 16 * sizeof(float));
     }
+
+    glBindBuffer_(GL_UNIFORM_BUFFER, instanceUbo_);
+    glBufferSubData_(GL_UNIFORM_BUFFER, 0,
+                     static_cast<GLsizeiptr>(objectCount * 16 * sizeof(float)),
+                     instanceMatrices);
+    glBindBuffer_(GL_UNIFORM_BUFFER, 0);
+    glBindBufferBase_(GL_UNIFORM_BUFFER, 0, instanceUbo_);
+
+    glDrawElementsInstanced_(GL_TRIANGLES, static_cast<GLsizei>(indexCount_),
+                             GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(objectCount));
 
     glBindVertexArray_(0);
     glUseProgram_(0);
+
+    if (usePostProcess)
+    {
+        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        RenderPostProcess(settings);
+    }
 
     glFlush();
     if (!SwapBuffers(hdc_))
@@ -596,6 +690,7 @@ void OpenGLRenderer::Shutdown()
     if (hglrc_)
     {
         wglMakeCurrent(hdc_, hglrc_);
+        DestroyPostProcessResources();
         DestroyGeometry();
         DestroyShaders();
         glFinish();
@@ -793,6 +888,26 @@ bool OpenGLRenderer::LoadGLFunctions()
     LOAD_GL(glDeleteBuffers, PFNGLDELETEBUFFERSPROC)
     LOAD_GL(glEnableVertexAttribArray, PFNGLENABLEVERTEXATTRIBARRAYPROC)
     LOAD_GL(glVertexAttribPointer, PFNGLVERTEXATTRIBPOINTERPROC)
+    LOAD_GL(glGenFramebuffers, PFNGLGENFRAMEBUFFERSPROC)
+    LOAD_GL(glBindFramebuffer, PFNGLBINDFRAMEBUFFERPROC)
+    LOAD_GL(glDeleteFramebuffers, PFNGLDELETEFRAMEBUFFERSPROC)
+    LOAD_GL(glFramebufferTexture2D, PFNGLFRAMEBUFFERTEXTURE2DPROC)
+    LOAD_GL(glFramebufferRenderbuffer, PFNGLFRAMEBUFFERRENDERBUFFERPROC)
+    LOAD_GL(glCheckFramebufferStatus, PFNGLCHECKFRAMEBUFFERSTATUSPROC)
+    LOAD_GL(glGenRenderbuffers, PFNGLGENRENDERBUFFERSPROC)
+    LOAD_GL(glBindRenderbuffer, PFNGLBINDRENDERBUFFERPROC)
+    LOAD_GL(glRenderbufferStorage, PFNGLRENDERBUFFERSTORAGEPROC)
+    LOAD_GL(glDeleteRenderbuffers, PFNGLDELETERENDERBUFFERSPROC)
+    LOAD_GL(glActiveTexture, PFNGLACTIVETEXTUREPROC)
+    LOAD_GL(glUniform1i, PFNGLUNIFORM1IPROC)
+    LOAD_GL(glUniform2f, PFNGLUNIFORM2FPROC)
+    LOAD_GL(glUniform1f, PFNGLUNIFORM1FPROC)
+    LOAD_GL(glDrawElementsInstanced, PFNGLDRAWELEMENTSINSTANCEDPROC)
+    LOAD_GL(glVertexAttribDivisor, PFNGLVERTEXATTRIBDIVISORPROC)
+    LOAD_GL(glBindBufferBase, PFNGLBINDBUFFERBASEPROC)
+    LOAD_GL(glGetUniformBlockIndex, PFNGLGETUNIFORMBLOCKINDEXPROC)
+    LOAD_GL(glUniformBlockBinding, PFNGLUNIFORMBLOCKBINDINGPROC)
+    LOAD_GL(glBufferSubData, PFNGLBUFFERSUBDATAPROC)
 
 #undef LOAD_GL
 
@@ -857,14 +972,19 @@ bool OpenGLRenderer::CompileShaders()
         return false;
     }
 
-    locWorld_ = glGetUniformLocation_(sceneProgram_, "uWorld");
     locViewProj_ = glGetUniformLocation_(sceneProgram_, "uViewProj");
     locLightDir_ = glGetUniformLocation_(sceneProgram_, "uLightDir");
     locCameraPosTime_ = glGetUniformLocation_(sceneProgram_, "uCameraPosTime");
     locTopicFlags_ = glGetUniformLocation_(sceneProgram_, "uTopicFlags");
 
-    LogLine("OGL", "Shaders compiled, uniforms: world=%d viewProj=%d light=%d camera=%d topic=%d",
-            locWorld_, locViewProj_, locLightDir_, locCameraPosTime_, locTopicFlags_);
+    GLuint instanceBlockIdx = glGetUniformBlockIndex_(sceneProgram_, "InstanceBlock");
+    if (instanceBlockIdx != 0xFFFFFFFF)
+    {
+        glUniformBlockBinding_(sceneProgram_, instanceBlockIdx, 0);
+    }
+
+    LogLine("OGL", "Shaders compiled (instanced), uniforms: viewProj=%d light=%d camera=%d topic=%d uboBlock=%u",
+            locViewProj_, locLightDir_, locCameraPosTime_, locTopicFlags_, instanceBlockIdx);
     return true;
 }
 
@@ -908,8 +1028,17 @@ void OpenGLRenderer::CreateGeometry()
                            reinterpret_cast<const void *>(offsetof(MeshVertex, color)));
 
     glBindVertexArray_(0);
-    LogLine("OGL", "Geometry created: %u vertices, %u indices",
-            static_cast<uint32_t>(vertices.size()), indexCount_);
+
+    glGenBuffers_(1, &instanceUbo_);
+    glBindBuffer_(GL_UNIFORM_BUFFER, instanceUbo_);
+    glBufferData_(GL_UNIFORM_BUFFER,
+                  static_cast<GLsizeiptr>(kMaxInstances * 16 * sizeof(float)),
+                  nullptr,
+                  GL_DYNAMIC_DRAW);
+    glBindBuffer_(GL_UNIFORM_BUFFER, 0);
+
+    LogLine("OGL", "Geometry created: %u vertices, %u indices (instanced UBO ready, max %u instances)",
+            static_cast<uint32_t>(vertices.size()), indexCount_, kMaxInstances);
 }
 
 void OpenGLRenderer::DestroyGeometry()
@@ -929,6 +1058,11 @@ void OpenGLRenderer::DestroyGeometry()
         glDeleteBuffers_(1, &ibo_);
         ibo_ = 0;
     }
+    if (instanceUbo_)
+    {
+        glDeleteBuffers_(1, &instanceUbo_);
+        instanceUbo_ = 0;
+    }
 }
 
 void OpenGLRenderer::DestroyShaders()
@@ -938,6 +1072,329 @@ void OpenGLRenderer::DestroyShaders()
         glDeleteProgram_(sceneProgram_);
         sceneProgram_ = 0;
     }
+}
+
+static const char *kBloomExtractVS = R"(
+#version 330 core
+layout(location = 0) in vec2 aPos;
+out vec2 vUv;
+void main() {
+    vUv = aPos * 0.5 + 0.5;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+}
+)";
+
+static const char *kBloomExtractFS = R"(
+#version 330 core
+in vec2 vUv;
+uniform sampler2D uScene;
+uniform float uThreshold;
+out vec4 fragColor;
+void main() {
+    vec3 c = texture(uScene, vUv).rgb;
+    float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float knee = max(0.0, (lum - uThreshold) / max(0.0001, 1.0 - uThreshold));
+    fragColor = vec4(c * knee, 1.0);
+}
+)";
+
+static const char *kBloomBlurFS = R"(
+#version 330 core
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDirection;
+out vec4 fragColor;
+void main() {
+    vec3 c = texture(uTex, vUv).rgb * 0.227027;
+    c += texture(uTex, vUv + uDirection * 1.384615).rgb * 0.316216;
+    c += texture(uTex, vUv - uDirection * 1.384615).rgb * 0.316216;
+    c += texture(uTex, vUv + uDirection * 3.230769).rgb * 0.070270;
+    c += texture(uTex, vUv - uDirection * 3.230769).rgb * 0.070270;
+    fragColor = vec4(c, 1.0);
+}
+)";
+
+static const char *kCompositeFS = R"(
+#version 330 core
+in vec2 vUv;
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform vec4 uParams;
+out vec4 fragColor;
+void main() {
+    vec3 scene = texture(uScene, vUv).rgb;
+    vec3 bloom = texture(uBloom, vUv).rgb;
+    vec3 hdr = scene + bloom * uParams.y;
+    vec3 mapped = vec3(1.0) - exp(-hdr * uParams.x);
+
+    vec2 centered = vUv * 2.0 - 1.0;
+    float vignette = 1.0 - smoothstep(0.35, 1.2, dot(centered, centered));
+    mapped *= 0.85 + 0.15 * vignette;
+
+    fragColor = vec4(clamp(mapped, 0.0, 1.0), 1.0);
+}
+)";
+
+bool OpenGLRenderer::CreatePostProcessResources()
+{
+    auto compileShader = [](GLenum type, const char *source) -> GLuint {
+        GLuint shader = glCreateShader_(type);
+        glShaderSource_(shader, 1, &source, nullptr);
+        glCompileShader_(shader);
+        GLint success = 0;
+        glGetShaderiv_(shader, GL_COMPILE_STATUS, &success);
+        if (!success)
+        {
+            glDeleteShader_(shader);
+            return 0;
+        }
+        return shader;
+    };
+
+    auto linkProgram = [](GLuint vs, GLuint fs) -> GLuint {
+        GLuint prog = glCreateProgram_();
+        glAttachShader_(prog, vs);
+        glAttachShader_(prog, fs);
+        glLinkProgram_(prog);
+        GLint success = 0;
+        glGetProgramiv_(prog, GL_LINK_STATUS, &success);
+        if (!success)
+        {
+            glDeleteProgram_(prog);
+            return 0;
+        }
+        return prog;
+    };
+
+    GLuint quadVS = compileShader(GL_VERTEX_SHADER, kBloomExtractVS);
+    if (!quadVS)
+    {
+        return false;
+    }
+
+    GLuint extractFS = compileShader(GL_FRAGMENT_SHADER, kBloomExtractFS);
+    GLuint blurFS = compileShader(GL_FRAGMENT_SHADER, kBloomBlurFS);
+    GLuint compositeFS = compileShader(GL_FRAGMENT_SHADER, kCompositeFS);
+
+    if (!extractFS || !blurFS || !compositeFS)
+    {
+        glDeleteShader_(quadVS);
+        if (extractFS) glDeleteShader_(extractFS);
+        if (blurFS) glDeleteShader_(blurFS);
+        if (compositeFS) glDeleteShader_(compositeFS);
+        return false;
+    }
+
+    bloomExtractProgram_ = linkProgram(quadVS, extractFS);
+    bloomBlurProgram_ = linkProgram(quadVS, blurFS);
+    compositeProgram_ = linkProgram(quadVS, compositeFS);
+
+    glDeleteShader_(quadVS);
+    glDeleteShader_(extractFS);
+    glDeleteShader_(blurFS);
+    glDeleteShader_(compositeFS);
+
+    if (!bloomExtractProgram_ || !bloomBlurProgram_ || !compositeProgram_)
+    {
+        return false;
+    }
+
+    locBloomExtractScene_ = glGetUniformLocation_(bloomExtractProgram_, "uScene");
+    locBloomExtractThreshold_ = glGetUniformLocation_(bloomExtractProgram_, "uThreshold");
+    locBlurDirection_ = glGetUniformLocation_(bloomBlurProgram_, "uDirection");
+    locBlurTex_ = glGetUniformLocation_(bloomBlurProgram_, "uTex");
+    locCompositeScene_ = glGetUniformLocation_(compositeProgram_, "uScene");
+    locCompositeBloom_ = glGetUniformLocation_(compositeProgram_, "uBloom");
+    locCompositeParams_ = glGetUniformLocation_(compositeProgram_, "uParams");
+
+    float quadVerts[] = {-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f};
+    glGenVertexArrays_(1, &quadVao_);
+    glBindVertexArray_(quadVao_);
+    glGenBuffers_(1, &quadVbo_);
+    glBindBuffer_(GL_ARRAY_BUFFER, quadVbo_);
+    glBufferData_(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray_(0);
+    glVertexAttribPointer_(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glBindVertexArray_(0);
+
+    uint32_t w = std::max(1u, width_);
+    uint32_t h = std::max(1u, height_);
+    uint32_t hw = std::max(1u, w / 2);
+    uint32_t hh = std::max(1u, h / 2);
+
+    glGenFramebuffers_(1, &sceneFbo_);
+    glBindFramebuffer_(GL_FRAMEBUFFER, sceneFbo_);
+    glGenTextures(1, &sceneColorTex_);
+    glBindTexture(GL_TEXTURE_2D, sceneColorTex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneColorTex_, 0);
+
+    glGenRenderbuffers_(1, &sceneDepthRbo_);
+    glBindRenderbuffer_(GL_RENDERBUFFER, sceneDepthRbo_);
+    glRenderbufferStorage_(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
+    glFramebufferRenderbuffer_(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, sceneDepthRbo_);
+
+    if (glCheckFramebufferStatus_(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        LogLine("OGL", "Scene FBO incomplete");
+        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        return false;
+    }
+
+    auto createBloomFbo = [&](uint32_t &fbo, uint32_t &tex) -> bool {
+        glGenFramebuffers_(1, &fbo);
+        glBindFramebuffer_(GL_FRAMEBUFFER, fbo);
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, hw, hh, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+        return glCheckFramebufferStatus_(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    };
+
+    if (!createBloomFbo(bloomFboA_, bloomTexA_) || !createBloomFbo(bloomFboB_, bloomTexB_))
+    {
+        LogLine("OGL", "Bloom FBO incomplete");
+        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        return false;
+    }
+
+    glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+    LogLine("OGL", "Post-process resources created: scene=%ux%u bloom=%ux%u", w, h, hw, hh);
+    return true;
+}
+
+void OpenGLRenderer::DestroyPostProcessResources()
+{
+    if (bloomFboB_)
+    {
+        glDeleteFramebuffers_(1, &bloomFboB_);
+        bloomFboB_ = 0;
+    }
+    if (bloomTexB_)
+    {
+        glDeleteTextures(1, &bloomTexB_);
+        bloomTexB_ = 0;
+    }
+    if (bloomFboA_)
+    {
+        glDeleteFramebuffers_(1, &bloomFboA_);
+        bloomFboA_ = 0;
+    }
+    if (bloomTexA_)
+    {
+        glDeleteTextures(1, &bloomTexA_);
+        bloomTexA_ = 0;
+    }
+    if (sceneFbo_)
+    {
+        glDeleteFramebuffers_(1, &sceneFbo_);
+        sceneFbo_ = 0;
+    }
+    if (sceneColorTex_)
+    {
+        glDeleteTextures(1, &sceneColorTex_);
+        sceneColorTex_ = 0;
+    }
+    if (sceneDepthRbo_)
+    {
+        glDeleteRenderbuffers_(1, &sceneDepthRbo_);
+        sceneDepthRbo_ = 0;
+    }
+    if (quadVao_)
+    {
+        glDeleteVertexArrays_(1, &quadVao_);
+        quadVao_ = 0;
+    }
+    if (quadVbo_)
+    {
+        glDeleteBuffers_(1, &quadVbo_);
+        quadVbo_ = 0;
+    }
+    if (bloomExtractProgram_)
+    {
+        glDeleteProgram_(bloomExtractProgram_);
+        bloomExtractProgram_ = 0;
+    }
+    if (bloomBlurProgram_)
+    {
+        glDeleteProgram_(bloomBlurProgram_);
+        bloomBlurProgram_ = 0;
+    }
+    if (compositeProgram_)
+    {
+        glDeleteProgram_(compositeProgram_);
+        compositeProgram_ = 0;
+    }
+}
+
+void OpenGLRenderer::RenderPostProcess(const FrameSettings &settings)
+{
+    if (!bloomExtractProgram_ || !bloomBlurProgram_ || !compositeProgram_ || !quadVao_)
+    {
+        return;
+    }
+
+    TopicRuntimeProfile profile = BuildTopicRuntimeProfile(settings.topic, settings.errorExampleEnabled);
+    uint32_t hw = std::max(1u, width_ / 2);
+    uint32_t hh = std::max(1u, height_ / 2);
+
+    glDisable(GL_DEPTH_TEST);
+
+    glBindFramebuffer_(GL_FRAMEBUFFER, bloomFboA_);
+    glViewport(0, 0, static_cast<GLsizei>(hw), static_cast<GLsizei>(hh));
+    glUseProgram_(bloomExtractProgram_);
+    glActiveTexture_(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, sceneColorTex_);
+    glUniform1i_(locBloomExtractScene_, 0);
+    glUniform1f_(locBloomExtractThreshold_, profile.brightThreshold);
+    glBindVertexArray_(quadVao_);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    uint32_t blurPasses = std::max(1u, std::min(profile.blurPassCount, 4u));
+    float texelX = 1.0f / static_cast<float>(hw);
+    float texelY = 1.0f / static_cast<float>(hh);
+
+    for (uint32_t i = 0; i < blurPasses; ++i)
+    {
+        glBindFramebuffer_(GL_FRAMEBUFFER, bloomFboB_);
+        glUseProgram_(bloomBlurProgram_);
+        glActiveTexture_(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, bloomTexA_);
+        glUniform1i_(locBlurTex_, 0);
+        glUniform2f_(locBlurDirection_, texelX, 0.0f);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        glBindFramebuffer_(GL_FRAMEBUFFER, bloomFboA_);
+        glBindTexture(GL_TEXTURE_2D, bloomTexB_);
+        glUniform2f_(locBlurDirection_, 0.0f, texelY);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
+
+    glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, static_cast<GLsizei>(width_), static_cast<GLsizei>(height_));
+    glUseProgram_(compositeProgram_);
+    glActiveTexture_(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, sceneColorTex_);
+    glUniform1i_(locCompositeScene_, 0);
+    glActiveTexture_(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, bloomTexA_);
+    glUniform1i_(locCompositeBloom_, 1);
+    float bloomStr = profile.enableBloom ? profile.bloomStrength : 0.0f;
+    glUniform4f_(locCompositeParams_, profile.exposure, bloomStr, 0.0f, 0.0f);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    glBindVertexArray_(0);
+    glUseProgram_(0);
+    glActiveTexture_(GL_TEXTURE0);
+    glEnable(GL_DEPTH_TEST);
 }
 
 void OpenGLRenderer::UpdateMatrices(const FrameSettings &settings)

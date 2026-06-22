@@ -343,7 +343,25 @@ void DX11Renderer::Render(const FrameSettings &settings)
         context_->ClearRenderTargetView(sceneColorMSAARTV_.Get(), clearColor);
         context_->ClearDepthStencilView(sceneDepthDSV_.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
 
-        context_->VSSetShader(sceneVS_.Get(), nullptr, 0);
+        bool useTessellation = profile.usePBR;
+
+        if (useTessellation)
+        {
+            context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST);
+            context_->VSSetShader(tessVS_.Get(), nullptr, 0);
+            context_->HSSetShader(tessHS_.Get(), nullptr, 0);
+            context_->DSSetShader(tessDS_.Get(), nullptr, 0);
+
+            ID3D11Buffer *sceneCBBuffer = sceneCB_.Get();
+            context_->HSSetConstantBuffers(0, 1, &sceneCBBuffer);
+            context_->DSSetConstantBuffers(0, 1, &sceneCBBuffer);
+        }
+        else
+        {
+            context_->VSSetShader(sceneVS_.Get(), nullptr, 0);
+            context_->HSSetShader(nullptr, nullptr, 0);
+            context_->DSSetShader(nullptr, nullptr, 0);
+        }
         context_->PSSetShader(scenePS_.Get(), nullptr, 0);
 
         ID3D11ShaderResourceView *scenePassSrvs[kTextureSlotCount] = {};
@@ -363,6 +381,13 @@ void DX11Renderer::Render(const FrameSettings &settings)
         }
 
         context_->PSSetShaderResources(0, kTextureSlotCount, nullSrvs);
+
+        if (useTessellation)
+        {
+            context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            context_->HSSetShader(nullptr, nullptr, 0);
+            context_->DSSetShader(nullptr, nullptr, 0);
+        }
     }
     EndEvent();
 
@@ -1050,6 +1075,12 @@ bool DX11Renderer::CreatePipelineShaders()
     Microsoft::WRL::ComPtr<ID3DBlob> particleBlob;
     Microsoft::WRL::ComPtr<ID3DBlob> edgeBlob;
 
+    Microsoft::WRL::ComPtr<ID3DBlob> tessVsBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> tessHsBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> tessDsBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> wireframeGsBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> wireframePsBlob;
+
     if (!CompileShader("SceneVS", "vs_5_0", sceneVsBlob) ||
         !CompileShader("ScenePS", "ps_5_0", scenePsBlob) ||
         !CompileShader("ShadowVS", "vs_5_0", shadowVsBlob) ||
@@ -1060,7 +1091,12 @@ bool DX11Renderer::CreatePipelineShaders()
         !CompileShader("CompositePS", "ps_5_0", compositeBlob) ||
         !CompileShader("CopyPS", "ps_5_0", copyBlob) ||
         !CompileShader("ParticleCS", "cs_5_0", particleBlob) ||
-        !CompileShader("EdgeDetectCS", "cs_5_0", edgeBlob))
+        !CompileShader("EdgeDetectCS", "cs_5_0", edgeBlob) ||
+        !CompileShader("TessVS", "vs_5_0", tessVsBlob) ||
+        !CompileShader("TessHS", "hs_5_0", tessHsBlob) ||
+        !CompileShader("TessDS", "ds_5_0", tessDsBlob) ||
+        !CompileShader("WireframeGS", "gs_5_0", wireframeGsBlob) ||
+        !CompileShader("WireframePS", "ps_5_0", wireframePsBlob))
     {
         return false;
     }
@@ -1109,6 +1145,30 @@ bool DX11Renderer::CreatePipelineShaders()
                                             edgeBlob->GetBufferSize(),
                                             nullptr,
                                             edgeDetectCS_.GetAddressOf())))
+    {
+        return false;
+    }
+
+    if (FAILED(device_->CreateVertexShader(tessVsBlob->GetBufferPointer(),
+                                            tessVsBlob->GetBufferSize(),
+                                            nullptr,
+                                            tessVS_.GetAddressOf())) ||
+        FAILED(device_->CreateHullShader(tessHsBlob->GetBufferPointer(),
+                                          tessHsBlob->GetBufferSize(),
+                                          nullptr,
+                                          tessHS_.GetAddressOf())) ||
+        FAILED(device_->CreateDomainShader(tessDsBlob->GetBufferPointer(),
+                                            tessDsBlob->GetBufferSize(),
+                                            nullptr,
+                                            tessDS_.GetAddressOf())) ||
+        FAILED(device_->CreateGeometryShader(wireframeGsBlob->GetBufferPointer(),
+                                              wireframeGsBlob->GetBufferSize(),
+                                              nullptr,
+                                              wireframeGS_.GetAddressOf())) ||
+        FAILED(device_->CreatePixelShader(wireframePsBlob->GetBufferPointer(),
+                                           wireframePsBlob->GetBufferSize(),
+                                           nullptr,
+                                           wireframePS_.GetAddressOf())))
     {
         return false;
     }

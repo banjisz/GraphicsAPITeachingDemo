@@ -115,6 +115,11 @@ private:
     Microsoft::WRL::ComPtr<ID3D11PixelShader> copyPS_;
     Microsoft::WRL::ComPtr<ID3D11ComputeShader> particleCS_;
     Microsoft::WRL::ComPtr<ID3D11ComputeShader> edgeDetectCS_;
+    Microsoft::WRL::ComPtr<ID3D11VertexShader> tessVS_;
+    Microsoft::WRL::ComPtr<ID3D11HullShader> tessHS_;
+    Microsoft::WRL::ComPtr<ID3D11DomainShader> tessDS_;
+    Microsoft::WRL::ComPtr<ID3D11GeometryShader> wireframeGS_;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> wireframePS_;
 
     Microsoft::WRL::ComPtr<ID3D11InputLayout> sceneInputLayout_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer_;

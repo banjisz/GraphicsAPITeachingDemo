@@ -127,12 +127,17 @@ private:
                      VkImageUsageFlags usage,
                      VkMemoryPropertyFlags properties,
                      VkImage &image,
-                     VkDeviceMemory &memory) const;
+                     VkDeviceMemory &memory,
+                     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT) const;
     VkImageView CreateImageView(VkImage image,
                                 VkFormat format,
                                 VkImageAspectFlags aspectMask) const;
     std::vector<char> ReadBinaryFile(const std::string &path) const;
     std::string ResolveShaderPath(const char *fileName) const;
+    VkSampleCountFlagBits GetMaxUsableSampleCount() const;
+    bool CreateMSAAResources();
+    bool CreateComputePipeline();
+    void CleanupComputeResources();
 
 private:
     static constexpr uint32_t kMaxFramesInFlight = 2;
@@ -160,17 +165,36 @@ private:
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
+
+    VkPipelineLayout computePipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline computePipeline_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout computeDescriptorSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSet computeDescriptorSet_ = VK_NULL_HANDLE;
+    VkImage computeStorageImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory computeStorageMemory_ = VK_NULL_HANDLE;
+    VkImageView computeStorageImageView_ = VK_NULL_HANDLE;
     VkImage depthImage_ = VK_NULL_HANDLE;
     VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
     VkFormat depthFormat_ = VK_FORMAT_UNDEFINED;
     std::vector<VkFramebuffer> framebuffers_;
 
+    VkSampleCountFlagBits msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+    VkImage msaaColorImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory msaaColorMemory_ = VK_NULL_HANDLE;
+    VkImageView msaaColorImageView_ = VK_NULL_HANDLE;
+    VkImage msaaDepthImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory msaaDepthMemory_ = VK_NULL_HANDLE;
+    VkImageView msaaDepthImageView_ = VK_NULL_HANDLE;
+
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> commandBuffers_;
 
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
+    VkBuffer indexBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory indexBufferMemory_ = VK_NULL_HANDLE;
+    uint32_t cubeIndexCount_ = 0;
     VkImage albedoImage_ = VK_NULL_HANDLE;
     VkDeviceMemory albedoImageMemory_ = VK_NULL_HANDLE;
     VkImageView albedoImageView_ = VK_NULL_HANDLE;

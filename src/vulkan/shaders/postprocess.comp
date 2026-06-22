@@ -1,0 +1,44 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba8) uniform image2D outputImage;
+
+layout(push_constant) uniform PushConstants {
+    float time;
+    float width;
+    float height;
+    float intensity;
+} params;
+
+float hash(vec2 p)
+{
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+void main()
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = imageSize(outputImage);
+
+    if (pixelCoord.x >= imgSize.x || pixelCoord.y >= imgSize.y)
+        return;
+
+    vec4 color = imageLoad(outputImage, pixelCoord);
+    vec2 uv = vec2(pixelCoord) / vec2(imgSize);
+
+    // Vignette
+    vec2 centered = uv * 2.0 - 1.0;
+    float vignette = 1.0 - dot(centered, centered) * 0.35;
+    color.rgb *= vignette;
+
+    // Film grain
+    float grain = (hash(uv * vec2(imgSize) + vec2(params.time * 137.0, params.time * 271.0)) - 0.5) * 0.04 * params.intensity;
+    color.rgb += vec3(grain);
+
+    // Tone curve adjustment (subtle S-curve contrast)
+    color.rgb = color.rgb * color.rgb * (3.0 - 2.0 * color.rgb);
+
+    color.rgb = clamp(color.rgb, 0.0, 1.0);
+    imageStore(outputImage, pixelCoord, color);
+}

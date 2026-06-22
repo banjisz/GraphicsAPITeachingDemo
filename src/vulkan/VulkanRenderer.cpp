@@ -34,7 +34,13 @@ constexpr std::array<Vertex, 3> kTriangleVertices = {
     Vertex{{-0.65f, 0.55f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.30f, 1.00f, 0.45f}},
 };
 
-std::vector<Vertex> BuildCubeVertices()
+struct CubeMesh
+{
+    std::vector<Vertex> vertices;
+    std::vector<uint16_t> indices;
+};
+
+CubeMesh BuildCubeIndexed()
 {
     const float s = 0.8f;
     const std::array<std::array<float, 3>, 8> p = {
@@ -50,46 +56,47 @@ std::vector<Vertex> BuildCubeVertices()
 
     struct FaceDesc
     {
-        int i0;
-        int i1;
-        int i2;
-        int i3;
+        int i0, i1, i2, i3;
         std::array<float, 3> normal;
         std::array<float, 3> color;
     };
 
     const std::array<FaceDesc, 6> faces = {
-        FaceDesc{4, 5, 6, 7, {0.0f, 0.0f, 1.0f}, {1.00f, 0.40f, 0.25f}},   // front
-        FaceDesc{1, 0, 3, 2, {0.0f, 0.0f, -1.0f}, {0.25f, 0.85f, 1.00f}},  // back
-        FaceDesc{0, 4, 7, 3, {-1.0f, 0.0f, 0.0f}, {0.30f, 1.00f, 0.50f}},  // left
-        FaceDesc{5, 1, 2, 6, {1.0f, 0.0f, 0.0f}, {1.00f, 0.85f, 0.25f}},   // right
-        FaceDesc{3, 7, 6, 2, {0.0f, 1.0f, 0.0f}, {0.80f, 0.45f, 1.00f}},   // top
-        FaceDesc{0, 1, 5, 4, {0.0f, -1.0f, 0.0f}, {0.30f, 0.65f, 1.00f}},  // bottom
+        FaceDesc{4, 5, 6, 7, {0.0f, 0.0f, 1.0f}, {1.00f, 0.40f, 0.25f}},
+        FaceDesc{1, 0, 3, 2, {0.0f, 0.0f, -1.0f}, {0.25f, 0.85f, 1.00f}},
+        FaceDesc{0, 4, 7, 3, {-1.0f, 0.0f, 0.0f}, {0.30f, 1.00f, 0.50f}},
+        FaceDesc{5, 1, 2, 6, {1.0f, 0.0f, 0.0f}, {1.00f, 0.85f, 0.25f}},
+        FaceDesc{3, 7, 6, 2, {0.0f, 1.0f, 0.0f}, {0.80f, 0.45f, 1.00f}},
+        FaceDesc{0, 1, 5, 4, {0.0f, -1.0f, 0.0f}, {0.30f, 0.65f, 1.00f}},
     };
 
-    std::vector<Vertex> vertices;
-    vertices.reserve(36);
-
-    auto pushVertex = [&vertices, &p](int idx, const std::array<float, 3> &n, const std::array<float, 3> &c) {
-        vertices.push_back(Vertex{
-            {p[static_cast<size_t>(idx)][0], p[static_cast<size_t>(idx)][1], p[static_cast<size_t>(idx)][2]},
-            {n[0], n[1], n[2]},
-            {c[0], c[1], c[2]}});
-    };
+    CubeMesh mesh;
+    mesh.vertices.reserve(24);
+    mesh.indices.reserve(36);
 
     for (const auto &face : faces)
     {
-        // tri 1
-        pushVertex(face.i0, face.normal, face.color);
-        pushVertex(face.i1, face.normal, face.color);
-        pushVertex(face.i2, face.normal, face.color);
-        // tri 2
-        pushVertex(face.i0, face.normal, face.color);
-        pushVertex(face.i2, face.normal, face.color);
-        pushVertex(face.i3, face.normal, face.color);
+        uint16_t base = static_cast<uint16_t>(mesh.vertices.size());
+        auto addVert = [&](int idx) {
+            mesh.vertices.push_back(Vertex{
+                {p[static_cast<size_t>(idx)][0], p[static_cast<size_t>(idx)][1], p[static_cast<size_t>(idx)][2]},
+                {face.normal[0], face.normal[1], face.normal[2]},
+                {face.color[0], face.color[1], face.color[2]}});
+        };
+        addVert(face.i0);
+        addVert(face.i1);
+        addVert(face.i2);
+        addVert(face.i3);
+
+        mesh.indices.push_back(base + 0);
+        mesh.indices.push_back(base + 1);
+        mesh.indices.push_back(base + 2);
+        mesh.indices.push_back(base + 0);
+        mesh.indices.push_back(base + 2);
+        mesh.indices.push_back(base + 3);
     }
 
-    return vertices;
+    return mesh;
 }
 
 bool FileExists(const std::string &path)
@@ -193,6 +200,13 @@ bool VulkanRenderer::Initialize(HWND hwnd, uint32_t width, uint32_t height)
     if (!CreateSyncObjects())
     {
         LogLine("VK", "CreateSyncObjects failed");
+        Shutdown();
+        return false;
+    }
+
+    if (!CreateComputePipeline())
+    {
+        LogLine("VK", "CreateComputePipeline failed");
         Shutdown();
         return false;
     }
@@ -325,6 +339,7 @@ void VulkanRenderer::Shutdown()
     }
 
     CleanupSwapchainResources();
+    CleanupComputeResources();
 
     if (vertexBuffer_ != VK_NULL_HANDLE)
     {
@@ -335,6 +350,16 @@ void VulkanRenderer::Shutdown()
     {
         vkFreeMemory(device_, vertexBufferMemory_, nullptr);
         vertexBufferMemory_ = VK_NULL_HANDLE;
+    }
+    if (indexBuffer_ != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device_, indexBuffer_, nullptr);
+        indexBuffer_ = VK_NULL_HANDLE;
+    }
+    if (indexBufferMemory_ != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device_, indexBufferMemory_, nullptr);
+        indexBufferMemory_ = VK_NULL_HANDLE;
     }
 
     descriptorSet_ = VK_NULL_HANDLE;
@@ -529,7 +554,8 @@ bool VulkanRenderer::PickPhysicalDevice()
 
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(physicalDevice_, &properties);
-    LogLine("VK", "Using device: %s", properties.deviceName);
+    msaaSamples_ = GetMaxUsableSampleCount();
+    LogLine("VK", "Using device: %s, MSAA samples: %d", properties.deviceName, static_cast<int>(msaaSamples_));
     return true;
 }
 
@@ -550,7 +576,12 @@ bool VulkanRenderer::CreateLogicalDevice()
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
+    VkPhysicalDeviceFeatures supportedFeatures{};
+    vkGetPhysicalDeviceFeatures(physicalDevice_, &supportedFeatures);
+
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = supportedFeatures.samplerAnisotropy;
+    deviceFeatures.sampleRateShading = supportedFeatures.sampleRateShading;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -580,6 +611,75 @@ bool VulkanRenderer::CreateCommandPool()
     return vkCreateCommandPool(device_, &poolInfo, nullptr, &commandPool_) == VK_SUCCESS;
 }
 
+VkSampleCountFlagBits VulkanRenderer::GetMaxUsableSampleCount() const
+{
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice_, &properties);
+
+    VkSampleCountFlags counts = properties.limits.framebufferColorSampleCounts &
+                                properties.limits.framebufferDepthSampleCounts;
+
+    if (counts & VK_SAMPLE_COUNT_4_BIT)
+    {
+        return VK_SAMPLE_COUNT_4_BIT;
+    }
+    if (counts & VK_SAMPLE_COUNT_2_BIT)
+    {
+        return VK_SAMPLE_COUNT_2_BIT;
+    }
+    return VK_SAMPLE_COUNT_1_BIT;
+}
+
+bool VulkanRenderer::CreateMSAAResources()
+{
+    if (msaaSamples_ == VK_SAMPLE_COUNT_1_BIT)
+    {
+        return true;
+    }
+
+    if (!CreateImage(swapchainExtent_.width,
+                     swapchainExtent_.height,
+                     swapchainImageFormat_,
+                     VK_IMAGE_TILING_OPTIMAL,
+                     VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     msaaColorImage_,
+                     msaaColorMemory_,
+                     msaaSamples_))
+    {
+        return false;
+    }
+
+    msaaColorImageView_ = CreateImageView(msaaColorImage_, swapchainImageFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
+    if (msaaColorImageView_ == VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    VkFormat depthFmt = depthFormat_ != VK_FORMAT_UNDEFINED ? depthFormat_ : FindDepthFormat();
+    if (!CreateImage(swapchainExtent_.width,
+                     swapchainExtent_.height,
+                     depthFmt,
+                     VK_IMAGE_TILING_OPTIMAL,
+                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     msaaDepthImage_,
+                     msaaDepthMemory_,
+                     msaaSamples_))
+    {
+        return false;
+    }
+
+    VkImageAspectFlags depthAspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (depthFmt == VK_FORMAT_D32_SFLOAT_S8_UINT || depthFmt == VK_FORMAT_D24_UNORM_S8_UINT)
+    {
+        depthAspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+
+    msaaDepthImageView_ = CreateImageView(msaaDepthImage_, depthFmt, depthAspect);
+    return msaaDepthImageView_ != VK_NULL_HANDLE;
+}
+
 bool VulkanRenderer::CreateSwapchainResources()
 {
     if (!CreateSwapchain())
@@ -595,6 +695,10 @@ bool VulkanRenderer::CreateSwapchainResources()
         return false;
     }
     if (!CreatePipeline())
+    {
+        return false;
+    }
+    if (!CreateMSAAResources())
     {
         return false;
     }
@@ -651,6 +755,37 @@ void VulkanRenderer::CleanupSwapchainResources()
     {
         vkDestroyRenderPass(device_, renderPass_, nullptr);
         renderPass_ = VK_NULL_HANDLE;
+    }
+
+    if (msaaColorImageView_ != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(device_, msaaColorImageView_, nullptr);
+        msaaColorImageView_ = VK_NULL_HANDLE;
+    }
+    if (msaaColorImage_ != VK_NULL_HANDLE)
+    {
+        vkDestroyImage(device_, msaaColorImage_, nullptr);
+        msaaColorImage_ = VK_NULL_HANDLE;
+    }
+    if (msaaColorMemory_ != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device_, msaaColorMemory_, nullptr);
+        msaaColorMemory_ = VK_NULL_HANDLE;
+    }
+    if (msaaDepthImageView_ != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(device_, msaaDepthImageView_, nullptr);
+        msaaDepthImageView_ = VK_NULL_HANDLE;
+    }
+    if (msaaDepthImage_ != VK_NULL_HANDLE)
+    {
+        vkDestroyImage(device_, msaaDepthImage_, nullptr);
+        msaaDepthImage_ = VK_NULL_HANDLE;
+    }
+    if (msaaDepthMemory_ != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device_, msaaDepthMemory_, nullptr);
+        msaaDepthMemory_ = VK_NULL_HANDLE;
     }
 
     if (depthImageView_ != VK_NULL_HANDLE)
@@ -880,7 +1015,8 @@ bool VulkanRenderer::CreateImage(uint32_t width,
                                  VkImageUsageFlags usage,
                                  VkMemoryPropertyFlags properties,
                                  VkImage &image,
-                                 VkDeviceMemory &memory) const
+                                 VkDeviceMemory &memory,
+                                 VkSampleCountFlagBits samples) const
 {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -894,7 +1030,7 @@ bool VulkanRenderer::CreateImage(uint32_t width,
     imageInfo.tiling = tiling;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = usage;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.samples = samples;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateImage(device_, &imageInfo, nullptr, &image) != VK_SUCCESS)
@@ -1301,6 +1437,80 @@ bool VulkanRenderer::CreateRenderPass()
         return false;
     }
 
+    const bool useMSAA = msaaSamples_ != VK_SAMPLE_COUNT_1_BIT;
+
+    if (useMSAA)
+    {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = swapchainImageFormat_;
+        colorAttachment.samples = msaaSamples_;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format = depthFormat_;
+        depthAttachment.samples = msaaSamples_;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentDescription resolveAttachment{};
+        resolveAttachment.format = swapchainImageFormat_;
+        resolveAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        resolveAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        resolveAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        resolveAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        resolveAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        resolveAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        resolveAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0;
+        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 1;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentReference resolveAttachmentRef{};
+        resolveAttachmentRef.attachment = 2;
+        resolveAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorAttachmentRef;
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
+        subpass.pResolveAttachments = &resolveAttachmentRef;
+
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        std::array<VkAttachmentDescription, 3> attachments = {colorAttachment, depthAttachment, resolveAttachment};
+
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        renderPassInfo.pAttachments = attachments.data();
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
+
+        return vkCreateRenderPass(device_, &renderPassInfo, nullptr, &renderPass_) == VK_SUCCESS;
+    }
+
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapchainImageFormat_;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -1448,8 +1658,9 @@ bool VulkanRenderer::CreatePipeline()
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = msaaSamples_;
+    multisampling.sampleShadingEnable = (msaaSamples_ != VK_SAMPLE_COUNT_1_BIT) ? VK_TRUE : VK_FALSE;
+    multisampling.minSampleShading = 0.25f;
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -1539,6 +1750,11 @@ bool VulkanRenderer::CreatePipeline()
 
 bool VulkanRenderer::CreateDepthResources()
 {
+    if (msaaSamples_ != VK_SAMPLE_COUNT_1_BIT)
+    {
+        return true;
+    }
+
     if (depthFormat_ == VK_FORMAT_UNDEFINED)
     {
         depthFormat_ = FindDepthFormat();
@@ -1577,23 +1793,40 @@ bool VulkanRenderer::CreateDepthResources()
 
 bool VulkanRenderer::CreateFramebuffers()
 {
+    const bool useMSAA = msaaSamples_ != VK_SAMPLE_COUNT_1_BIT;
     framebuffers_.resize(swapchainImageViews_.size());
+
     for (size_t i = 0; i < swapchainImageViews_.size(); ++i)
     {
-        const std::array<VkImageView, 2> attachments = {swapchainImageViews_[i], depthImageView_};
-
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = renderPass_;
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        framebufferInfo.pAttachments = attachments.data();
         framebufferInfo.width = swapchainExtent_.width;
         framebufferInfo.height = swapchainExtent_.height;
         framebufferInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device_, &framebufferInfo, nullptr, &framebuffers_[i]) != VK_SUCCESS)
+        if (useMSAA)
         {
-            return false;
+            const std::array<VkImageView, 3> attachments = {
+                msaaColorImageView_, msaaDepthImageView_, swapchainImageViews_[i]};
+            framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+            framebufferInfo.pAttachments = attachments.data();
+
+            if (vkCreateFramebuffer(device_, &framebufferInfo, nullptr, &framebuffers_[i]) != VK_SUCCESS)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            const std::array<VkImageView, 2> attachments = {swapchainImageViews_[i], depthImageView_};
+            framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+            framebufferInfo.pAttachments = attachments.data();
+
+            if (vkCreateFramebuffer(device_, &framebufferInfo, nullptr, &framebuffers_[i]) != VK_SUCCESS)
+            {
+                return false;
+            }
         }
     }
 
@@ -1619,9 +1852,10 @@ bool VulkanRenderer::AllocateCommandBuffers()
 
 bool VulkanRenderer::CreateVertexBuffer()
 {
-    const std::vector<Vertex> cubeVertices = BuildCubeVertices();
+    CubeMesh cubeMesh = BuildCubeIndexed();
+
     std::vector<Vertex> allVertices;
-    allVertices.reserve(kTriangleVertices.size() + cubeVertices.size());
+    allVertices.reserve(kTriangleVertices.size() + cubeMesh.vertices.size());
 
     triangleFirstVertex_ = 0;
     triangleVertexCount_ = static_cast<uint32_t>(kTriangleVertices.size());
@@ -1631,12 +1865,13 @@ bool VulkanRenderer::CreateVertexBuffer()
     }
 
     cubeFirstVertex_ = static_cast<uint32_t>(allVertices.size());
-    cubeVertexCount_ = static_cast<uint32_t>(cubeVertices.size());
-    allVertices.insert(allVertices.end(), cubeVertices.begin(), cubeVertices.end());
+    cubeVertexCount_ = static_cast<uint32_t>(cubeMesh.vertices.size());
+    cubeIndexCount_ = static_cast<uint32_t>(cubeMesh.indices.size());
+    allVertices.insert(allVertices.end(), cubeMesh.vertices.begin(), cubeMesh.vertices.end());
 
-    const VkDeviceSize bufferSize = static_cast<VkDeviceSize>(allVertices.size() * sizeof(Vertex));
+    const VkDeviceSize vbSize = static_cast<VkDeviceSize>(allVertices.size() * sizeof(Vertex));
 
-    if (!CreateBuffer(bufferSize,
+    if (!CreateBuffer(vbSize,
                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       vertexBuffer_,
@@ -1646,15 +1881,33 @@ bool VulkanRenderer::CreateVertexBuffer()
     }
 
     void *mappedData = nullptr;
-    if (vkMapMemory(device_, vertexBufferMemory_, 0, bufferSize, 0, &mappedData) != VK_SUCCESS)
+    if (vkMapMemory(device_, vertexBufferMemory_, 0, vbSize, 0, &mappedData) != VK_SUCCESS)
+    {
+        return false;
+    }
+    std::memcpy(mappedData, allVertices.data(), static_cast<size_t>(vbSize));
+    vkUnmapMemory(device_, vertexBufferMemory_);
+
+    const VkDeviceSize ibSize = static_cast<VkDeviceSize>(cubeMesh.indices.size() * sizeof(uint16_t));
+    if (!CreateBuffer(ibSize,
+                      VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      indexBuffer_,
+                      indexBufferMemory_))
     {
         return false;
     }
 
-    std::memcpy(mappedData, allVertices.data(), static_cast<size_t>(bufferSize));
-    vkUnmapMemory(device_, vertexBufferMemory_);
+    void *indexData = nullptr;
+    if (vkMapMemory(device_, indexBufferMemory_, 0, ibSize, 0, &indexData) != VK_SUCCESS)
+    {
+        return false;
+    }
+    std::memcpy(indexData, cubeMesh.indices.data(), static_cast<size_t>(ibSize));
+    vkUnmapMemory(device_, indexBufferMemory_);
 
-    LogLine("VK", "Geometry uploaded triangle=%u cube=%u", triangleVertexCount_, cubeVertexCount_);
+    LogLine("VK", "Geometry uploaded: triangle=%u verts, cube=%u verts + %u indices (indexed draw)",
+            triangleVertexCount_, cubeVertexCount_, cubeIndexCount_);
     return true;
 }
 
@@ -1717,6 +1970,11 @@ bool VulkanRenderer::CreateMaterialTextures()
         return false;
     }
 
+    VkPhysicalDeviceProperties deviceProperties{};
+    vkGetPhysicalDeviceProperties(physicalDevice_, &deviceProperties);
+    VkPhysicalDeviceFeatures deviceFeatures{};
+    vkGetPhysicalDeviceFeatures(physicalDevice_, &deviceFeatures);
+
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -1724,8 +1982,10 @@ bool VulkanRenderer::CreateMaterialTextures()
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.anisotropyEnable = VK_FALSE;
-    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.anisotropyEnable = deviceFeatures.samplerAnisotropy ? VK_TRUE : VK_FALSE;
+    samplerInfo.maxAnisotropy = deviceFeatures.samplerAnisotropy
+                                    ? std::min(8.0f, deviceProperties.limits.maxSamplerAnisotropy)
+                                    : 1.0f;
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
@@ -1735,20 +1995,24 @@ bool VulkanRenderer::CreateMaterialTextures()
     samplerInfo.maxLod = 0.0f;
     samplerInfo.mipLodBias = 0.0f;
 
+    LogLine("VK", "Material sampler anisotropy=%s maxAniso=%.1f",
+            samplerInfo.anisotropyEnable ? "ON" : "OFF", samplerInfo.maxAnisotropy);
     return vkCreateSampler(device_, &samplerInfo, nullptr, &materialSampler_) == VK_SUCCESS;
 }
 
 bool VulkanRenderer::CreateMaterialDescriptorSet()
 {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 2;
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = 2;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    poolSizes[1].descriptorCount = 1;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = 2;
 
     if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS)
     {
@@ -1821,6 +2085,134 @@ bool VulkanRenderer::CreateSyncObjects()
     }
 
     return true;
+}
+
+bool VulkanRenderer::CreateComputePipeline()
+{
+    std::string compPath = ResolveShaderPath("postprocess.comp.spv");
+    std::vector<char> compCode = ReadBinaryFile(compPath);
+    if (compCode.empty())
+    {
+        LogLine("VK", "Compute shader not found at %s, skipping compute pipeline", compPath.c_str());
+        return true;
+    }
+
+    VkShaderModuleCreateInfo moduleInfo{};
+    moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    moduleInfo.codeSize = compCode.size();
+    moduleInfo.pCode = reinterpret_cast<const uint32_t *>(compCode.data());
+
+    VkShaderModule compModule = VK_NULL_HANDLE;
+    if (vkCreateShaderModule(device_, &moduleInfo, nullptr, &compModule) != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    VkDescriptorSetLayoutBinding storageImageBinding{};
+    storageImageBinding.binding = 0;
+    storageImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    storageImageBinding.descriptorCount = 1;
+    storageImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutCreateInfo dslInfo{};
+    dslInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    dslInfo.bindingCount = 1;
+    dslInfo.pBindings = &storageImageBinding;
+
+    if (vkCreateDescriptorSetLayout(device_, &dslInfo, nullptr, &computeDescriptorSetLayout_) != VK_SUCCESS)
+    {
+        vkDestroyShaderModule(device_, compModule, nullptr);
+        return false;
+    }
+
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(float) * 4;
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &computeDescriptorSetLayout_;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushRange;
+
+    if (vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &computePipelineLayout_) != VK_SUCCESS)
+    {
+        vkDestroyShaderModule(device_, compModule, nullptr);
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageInfo.module = compModule;
+    stageInfo.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage = stageInfo;
+    pipelineInfo.layout = computePipelineLayout_;
+
+    VkResult result = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &computePipeline_);
+    vkDestroyShaderModule(device_, compModule, nullptr);
+
+    if (result != VK_SUCCESS)
+    {
+        return false;
+    }
+
+    if (descriptorPool_ != VK_NULL_HANDLE)
+    {
+        VkDescriptorSetAllocateInfo compAllocInfo{};
+        compAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        compAllocInfo.descriptorPool = descriptorPool_;
+        compAllocInfo.descriptorSetCount = 1;
+        compAllocInfo.pSetLayouts = &computeDescriptorSetLayout_;
+
+        if (vkAllocateDescriptorSets(device_, &compAllocInfo, &computeDescriptorSet_) != VK_SUCCESS)
+        {
+            LogLine("VK", "Warning: failed to allocate compute descriptor set");
+        }
+    }
+
+    LogLine("VK", "Compute pipeline created (post-process)");
+    return true;
+}
+
+void VulkanRenderer::CleanupComputeResources()
+{
+    if (computeStorageImageView_ != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(device_, computeStorageImageView_, nullptr);
+        computeStorageImageView_ = VK_NULL_HANDLE;
+    }
+    if (computeStorageImage_ != VK_NULL_HANDLE)
+    {
+        vkDestroyImage(device_, computeStorageImage_, nullptr);
+        computeStorageImage_ = VK_NULL_HANDLE;
+    }
+    if (computeStorageMemory_ != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device_, computeStorageMemory_, nullptr);
+        computeStorageMemory_ = VK_NULL_HANDLE;
+    }
+    if (computePipeline_ != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device_, computePipeline_, nullptr);
+        computePipeline_ = VK_NULL_HANDLE;
+    }
+    if (computePipelineLayout_ != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device_, computePipelineLayout_, nullptr);
+        computePipelineLayout_ = VK_NULL_HANDLE;
+    }
+    if (computeDescriptorSetLayout_ != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device_, computeDescriptorSetLayout_, nullptr);
+        computeDescriptorSetLayout_ = VK_NULL_HANDLE;
+    }
+    computeDescriptorSet_ = VK_NULL_HANDLE;
 }
 
 bool VulkanRenderer::RecordCommandBuffer(VkCommandBuffer commandBuffer,
@@ -1904,7 +2296,8 @@ bool VulkanRenderer::RecordCommandBuffer(VkCommandBuffer commandBuffer,
     }
     else
     {
-        vkCmdDraw(commandBuffer, cubeVertexCount_, 1, cubeFirstVertex_, 0);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer_, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(commandBuffer, cubeIndexCount_, 1, 0, static_cast<int32_t>(cubeFirstVertex_), 0);
     }
     vkCmdEndRenderPass(commandBuffer);
 

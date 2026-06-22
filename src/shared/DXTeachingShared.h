@@ -698,8 +698,24 @@ float ComputeShadowFactor(float4 lightPos, float shadowStrength)
     {
         return 1.0;
     }
-    float sampled = gShadowTex.SampleCmpLevelZero(gShadowSampler, uv, ndc.z - 0.0015);
-    return lerp(1.0, sampled, saturate(shadowStrength));
+
+    float depth = ndc.z - 0.002;
+    float texelSize = 1.0 / 1024.0;
+    float shadow = 0.0;
+
+    [unroll]
+    for (int y = -1; y <= 1; ++y)
+    {
+        [unroll]
+        for (int x = -1; x <= 1; ++x)
+        {
+            float2 offset = float2((float)x, (float)y) * texelSize;
+            shadow += gShadowTex.SampleCmpLevelZero(gShadowSampler, uv + offset, depth);
+        }
+    }
+    shadow /= 9.0;
+
+    return lerp(1.0, shadow, saturate(shadowStrength));
 }
 
 SceneVSOutput SceneVS(SceneVSInput input)
@@ -713,6 +729,100 @@ SceneVSOutput SceneVS(SceneVSInput input)
     output.lightPos = mul(worldPos, gLightViewProj);
     output.localPos = input.position;
     output.localNormal = input.normal;
+    return output;
+}
+
+// ============================================================
+// Tessellation: Hull + Domain shaders for adaptive subdivision
+// ============================================================
+
+struct TessHSInput
+{
+    float3 worldPos : TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float3 color : COLOR;
+    float4 lightPos : TEXCOORD2;
+    float3 localPos : TEXCOORD3;
+    float3 localNormal : TEXCOORD4;
+};
+
+struct TessHSConstOutput
+{
+    float edgeTess[3] : SV_TessFactor;
+    float insideTess : SV_InsideTessFactor;
+};
+
+struct TessDSOutput
+{
+    float4 position : SV_POSITION;
+    float3 worldPos : TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float3 color : COLOR;
+    float4 lightPos : TEXCOORD2;
+    float3 localPos : TEXCOORD3;
+    float3 localNormal : TEXCOORD4;
+};
+
+TessHSInput TessVS(SceneVSInput input)
+{
+    TessHSInput output;
+    float4 worldPos = mul(float4(input.position, 1.0), gWorld);
+    output.worldPos = worldPos.xyz;
+    output.normal = normalize(mul(float4(input.normal, 0.0), gWorld).xyz);
+    output.color = input.color;
+    output.lightPos = mul(worldPos, gLightViewProj);
+    output.localPos = input.position;
+    output.localNormal = input.normal;
+    return output;
+}
+
+TessHSConstOutput TessHSConst(InputPatch<TessHSInput, 3> patch)
+{
+    TessHSConstOutput output;
+
+    float3 center = (patch[0].worldPos + patch[1].worldPos + patch[2].worldPos) / 3.0;
+    float dist = length(gCameraPosAndTime.xyz - center);
+    float tess = clamp(6.0 / max(dist, 0.5), 1.0, 8.0);
+
+    output.edgeTess[0] = tess;
+    output.edgeTess[1] = tess;
+    output.edgeTess[2] = tess;
+    output.insideTess = tess;
+    return output;
+}
+
+[domain("tri")]
+[partitioning("fractional_odd")]
+[outputtopology("triangle_cw")]
+[outputcontrolpoints(3)]
+[patchconstantfunc("TessHSConst")]
+TessHSInput TessHS(InputPatch<TessHSInput, 3> patch, uint id : SV_OutputControlPointID)
+{
+    return patch[id];
+}
+
+[domain("tri")]
+TessDSOutput TessDS(TessHSConstOutput tessFactors, float3 bary : SV_DomainLocation,
+                    const OutputPatch<TessHSInput, 3> patch)
+{
+    TessDSOutput output;
+
+    float3 worldPos = bary.x * patch[0].worldPos + bary.y * patch[1].worldPos + bary.z * patch[2].worldPos;
+    float3 normal = normalize(bary.x * patch[0].normal + bary.y * patch[1].normal + bary.z * patch[2].normal);
+    float3 localPos = bary.x * patch[0].localPos + bary.y * patch[1].localPos + bary.z * patch[2].localPos;
+    float3 localNormal = normalize(bary.x * patch[0].localNormal + bary.y * patch[1].localNormal + bary.z * patch[2].localNormal);
+
+    float time = gCameraPosAndTime.w;
+    float disp = sin(localPos.x * 6.0 + time * 2.0) * cos(localPos.z * 5.0 + time * 1.5) * 0.04;
+    worldPos += normal * disp;
+
+    output.position = mul(float4(worldPos, 1.0), gViewProj);
+    output.worldPos = worldPos;
+    output.normal = normal;
+    output.color = bary.x * patch[0].color + bary.y * patch[1].color + bary.z * patch[2].color;
+    output.lightPos = bary.x * patch[0].lightPos + bary.y * patch[1].lightPos + bary.z * patch[2].lightPos;
+    output.localPos = localPos;
+    output.localNormal = localNormal;
     return output;
 }
 
@@ -965,9 +1075,41 @@ float4 ResolvePostAA(float2 uv)
     return float4(saturate(antialiased), 1.0);
 }
 
+float3 ApplyChromaticAberration(float2 uv)
+{
+    float2 centered = uv * 2.0 - 1.0;
+    float dist = dot(centered, centered);
+    float aberrationStrength = 0.003 * dist;
+
+    float r = gPostTex.Sample(gLinearClamp, uv + centered * aberrationStrength).r;
+    float g = gPostTex.Sample(gLinearClamp, uv).g;
+    float b = gPostTex.Sample(gLinearClamp, uv - centered * aberrationStrength).b;
+    return float3(r, g, b);
+}
+
+float FilmGrain(float2 uv, float time)
+{
+    float2 seed = uv * float2(1920.0, 1080.0) + float2(time * 137.0, time * 271.0);
+    return frac(sin(dot(seed, float2(12.9898, 78.233))) * 43758.5453) * 2.0 - 1.0;
+}
+
 float4 CopyPS(FullscreenVSOutput input) : SV_TARGET
 {
-    return ResolvePostAA(input.uv);
+    float4 resolved = ResolvePostAA(input.uv);
+    float3 color = resolved.rgb;
+
+    float2 centered = input.uv * 2.0 - 1.0;
+    float dist = dot(centered, centered);
+    float aberrationStrength = 0.0015 * dist;
+    float r = gPostTex.Sample(gLinearClamp, input.uv + centered * aberrationStrength).r;
+    float b = gPostTex.Sample(gLinearClamp, input.uv - centered * aberrationStrength).b;
+    color.r = lerp(color.r, r, 0.5);
+    color.b = lerp(color.b, b, 0.5);
+
+    float grain = FilmGrain(input.uv, gPostParams1.y) * 0.018;
+    color += grain;
+
+    return float4(saturate(color), 1.0);
 }
 
 [numthreads(8, 8, 1)]
@@ -1032,6 +1174,70 @@ void EdgeDetectCS(uint3 dtid : SV_DispatchThreadID)
                 Luminance(c02) + 2.0 * Luminance(c12) + Luminance(c22);
     float edge = smoothstep(0.05, 0.32, length(float2(gx, gy)));
     gEdgeOut[dtid.xy] = float4(edge, edge, edge, 1.0);
+}
+
+// ============================================================
+// Geometry Shader: Wireframe overlay with barycentric coords
+// ============================================================
+
+struct GeoVSOutput
+{
+    float4 position : SV_POSITION;
+    float3 worldPos : TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float3 color : COLOR;
+    float4 lightPos : TEXCOORD2;
+    float3 localPos : TEXCOORD3;
+    float3 localNormal : TEXCOORD4;
+};
+
+struct GeoGSOutput
+{
+    float4 position : SV_POSITION;
+    float3 worldPos : TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float3 color : COLOR;
+    float4 lightPos : TEXCOORD2;
+    float3 localPos : TEXCOORD3;
+    float3 localNormal : TEXCOORD4;
+    float3 baryCoord : TEXCOORD5;
+};
+
+[maxvertexcount(3)]
+void WireframeGS(triangle GeoVSOutput input[3], inout TriangleStream<GeoGSOutput> stream)
+{
+    float3 bary[3] = { float3(1,0,0), float3(0,1,0), float3(0,0,1) };
+
+    [unroll]
+    for (int i = 0; i < 3; ++i)
+    {
+        GeoGSOutput output;
+        output.position = input[i].position;
+        output.worldPos = input[i].worldPos;
+        output.normal = input[i].normal;
+        output.color = input[i].color;
+        output.lightPos = input[i].lightPos;
+        output.localPos = input[i].localPos;
+        output.localNormal = input[i].localNormal;
+        output.baryCoord = bary[i];
+        stream.Append(output);
+    }
+    stream.RestartStrip();
+}
+
+float4 WireframePS(GeoGSOutput input) : SV_TARGET
+{
+    float3 bary = input.baryCoord;
+    float minBary = min(bary.x, min(bary.y, bary.z));
+
+    float wireThickness = 0.02;
+    float wire = smoothstep(0.0, wireThickness, minBary);
+
+    float3 wireColor = float3(0.1, 0.9, 1.0);
+    float3 faceColor = input.color * 0.3;
+
+    float3 finalColor = lerp(wireColor, faceColor, wire);
+    return float4(finalColor, 1.0);
 }
 )";
 }

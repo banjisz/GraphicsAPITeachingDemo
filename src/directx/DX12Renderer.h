@@ -164,6 +164,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> computeRootSignature_;
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> scenePSO_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> tessPSO_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> wireframePSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> brightExtractPSO_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> blurHPSO_;

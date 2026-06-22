@@ -415,13 +415,28 @@ void DX12Renderer::Render(const FrameSettings &settings)
 
         commandList_->SetGraphicsRootSignature(graphicsRootSignature_.Get());
         commandList_->SetGraphicsRootDescriptorTable(3, SrvUavGpuHandle(kSrvShadow));
-        commandList_->SetPipelineState(scenePSO_.Get());
+
+        bool useTessellation = profile.usePBR;
+        if (useTessellation)
+        {
+            commandList_->SetPipelineState(tessPSO_.Get());
+            commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST);
+        }
+        else
+        {
+            commandList_->SetPipelineState(scenePSO_.Get());
+        }
 
         for (uint32_t i = 0; i < objectCount; ++i)
         {
             uploadSceneCB(i, BuildWorldMatrix(settings.elapsedSeconds, i, objectCount, profile.rotationSpeed));
             commandList_->SetGraphicsRootConstantBufferView(0, SceneCBAddress(i));
             commandList_->DrawIndexedInstanced(indexCount_, 1, 0, 0, 0);
+        }
+
+        if (useTessellation)
+        {
+            commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         }
 
         TransitionResource(shadowDepth_.Get(), shadowDepthState_, D3D12_RESOURCE_STATE_DEPTH_WRITE);
@@ -1057,6 +1072,11 @@ bool DX12Renderer::CreatePipelineStates()
     Microsoft::WRL::ComPtr<ID3DBlob> copyPS;
     Microsoft::WRL::ComPtr<ID3DBlob> particleCS;
     Microsoft::WRL::ComPtr<ID3DBlob> edgeCS;
+    Microsoft::WRL::ComPtr<ID3DBlob> tessVS;
+    Microsoft::WRL::ComPtr<ID3DBlob> tessHS;
+    Microsoft::WRL::ComPtr<ID3DBlob> tessDS;
+    Microsoft::WRL::ComPtr<ID3DBlob> wireframeGS;
+    Microsoft::WRL::ComPtr<ID3DBlob> wireframePS;
 
     if (!CompileShader("SceneVS", "vs_5_0", sceneVS) ||
         !CompileShader("ScenePS", "ps_5_0", scenePS) ||
@@ -1068,7 +1088,12 @@ bool DX12Renderer::CreatePipelineStates()
         !CompileShader("CompositePS", "ps_5_0", compositePS) ||
         !CompileShader("CopyPS", "ps_5_0", copyPS) ||
         !CompileShader("ParticleCS", "cs_5_0", particleCS) ||
-        !CompileShader("EdgeDetectCS", "cs_5_0", edgeCS))
+        !CompileShader("EdgeDetectCS", "cs_5_0", edgeCS) ||
+        !CompileShader("TessVS", "vs_5_0", tessVS) ||
+        !CompileShader("TessHS", "hs_5_0", tessHS) ||
+        !CompileShader("TessDS", "ds_5_0", tessDS) ||
+        !CompileShader("WireframeGS", "gs_5_0", wireframeGS) ||
+        !CompileShader("WireframePS", "ps_5_0", wireframePS))
     {
         return false;
     }
@@ -1281,6 +1306,26 @@ bool DX12Renderer::CreatePipelineStates()
     sceneDesc.SampleDesc.Count = kSceneSampleCount;
 
     if (!createGraphicsPSO(sceneDesc, scenePSO_))
+    {
+        return false;
+    }
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC tessDesc = sceneDesc;
+    tessDesc.VS = {tessVS->GetBufferPointer(), tessVS->GetBufferSize()};
+    tessDesc.HS = {tessHS->GetBufferPointer(), tessHS->GetBufferSize()};
+    tessDesc.DS = {tessDS->GetBufferPointer(), tessDS->GetBufferSize()};
+    tessDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+
+    if (!createGraphicsPSO(tessDesc, tessPSO_))
+    {
+        return false;
+    }
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC wireframeDesc = sceneDesc;
+    wireframeDesc.GS = {wireframeGS->GetBufferPointer(), wireframeGS->GetBufferSize()};
+    wireframeDesc.PS = {wireframePS->GetBufferPointer(), wireframePS->GetBufferSize()};
+
+    if (!createGraphicsPSO(wireframeDesc, wireframePSO_))
     {
         return false;
     }
